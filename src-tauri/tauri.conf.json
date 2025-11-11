@@ -1,0 +1,46 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "fanyifanyi",
+  "version": "0.1.1",
+  "identifier": "com.fanyifanyi.app",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "fanyifanyi",
+        "width": 800,
+        "height": 600,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "publisher": "fanyifanyi"
+  },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://github.com/sunven/fanyifanyi/releases/latest/download/{{target}}-{{arch}}.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM2RDNBN0EwQjNFRUYyREUKUldUZTh1NnpvS2ZUTmsrd3RVZytrWjUwK3hiWG9SUWV6NlR1MXRTWXd0Ymg2WVZvSitUeG1JWkwK"
+    }
+  }
+}
