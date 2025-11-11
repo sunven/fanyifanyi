@@ -23,13 +23,6 @@ const DEFAULT_MODELS: AIConfig[] = [
     apiKey: '', // 请在 Settings 页面配置您的 API Key
     model: 'deepseek-v3-1-terminus',
   },
-  {
-    id: 'default-2',
-    name: 'GPT-4o Mini',
-    baseURL: 'https://api.openai.com/v1',
-    apiKey: '', // 请在 Settings 页面配置您的 API Key
-    model: 'gpt-4o-mini',
-  },
 ]
 
 const DEFAULT_CONFIG: AIConfigs = {
