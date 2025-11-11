@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.5] - 2025-11-11
+
+### Bug Fixes
+
+- **updater**: Fix auto-update check errors
+
 ## [0.1.4] - 2025-11-11
 
 ### Miscellaneous Tasks
