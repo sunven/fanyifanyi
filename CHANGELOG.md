@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.3] - 2025-11-11
+
+### Bug Fixes
+
+- **ci**: Replace deprecated actions/create-release with gh CLI
+
+### Miscellaneous Tasks
+
+- **scripts**: Remove deprecated manual build and release scripts
+
 ## [0.1.2] - 2025-11-11
 
 ### Miscellaneous Tasks
