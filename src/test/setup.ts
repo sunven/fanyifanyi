@@ -2,7 +2,7 @@ import { beforeEach } from 'vitest'
 import '@testing-library/jest-dom'
 
 // Mock Tauri APIs
-global.window = global.window || {}
+globalThis.window = globalThis.window || {}
 
 // Mock localStorage
 const localStorageMock = (() => {
