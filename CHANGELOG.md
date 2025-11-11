@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.6] - 2025-11-11
+
+### Features
+
+- **app**: Add app version display in Settings page
+
+### Miscellaneous Tasks
+
+- **ci**: Disable Linux builds in GitHub Actions
+
 ## [0.1.5] - 2025-11-11
 
 ### Bug Fixes
