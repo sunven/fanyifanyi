@@ -196,13 +196,18 @@ jobs:
 
           # macOS aarch64
           if [ -f "fanyifanyi_aarch64.app.tar.gz" ]; then
+            SIG_CONTENT=""
+            if [ -f "fanyifanyi_aarch64.app.tar.gz.sig" ]; then
+              SIG_CONTENT=$(cat fanyifanyi_aarch64.app.tar.gz.sig)
+            fi
+
             cat > darwin-aarch64.json <<EOF
           {
             "version": "${{ steps.version.outputs.VERSION }}",
             "date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
             "platforms": {
               "darwin-aarch64": {
-                "signature": "$(cat fanyifanyi_aarch64.app.tar.gz.sig)",
+                "signature": "$SIG_CONTENT",
                 "url": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/fanyifanyi_aarch64.app.tar.gz"
               }
             }
@@ -213,13 +218,18 @@ jobs:
 
           # macOS x86_64
           if [ -f "fanyifanyi_x86_64.app.tar.gz" ]; then
+            SIG_CONTENT=""
+            if [ -f "fanyifanyi_x86_64.app.tar.gz.sig" ]; then
+              SIG_CONTENT=$(cat fanyifanyi_x86_64.app.tar.gz.sig)
+            fi
+
             cat > darwin-x86_64.json <<EOF
           {
             "version": "${{ steps.version.outputs.VERSION }}",
             "date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
             "platforms": {
               "darwin-x86_64": {
-                "signature": "$(cat fanyifanyi_x86_64.app.tar.gz.sig)",
+                "signature": "$SIG_CONTENT",
                 "url": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/fanyifanyi_x86_64.app.tar.gz"
               }
             }
@@ -231,13 +241,18 @@ jobs:
           # Linux x86_64
           APPIMAGE_FILE=$(ls *.AppImage 2>/dev/null | grep -v "\.AppImage\." | head -n 1)
           if [ -n "$APPIMAGE_FILE" ]; then
+            SIG_CONTENT=""
+            if [ -f "${APPIMAGE_FILE}.sig" ]; then
+              SIG_CONTENT=$(cat "${APPIMAGE_FILE}.sig")
+            fi
+
             cat > linux-x86_64.json <<EOF
           {
             "version": "${{ steps.version.outputs.VERSION }}",
             "date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
             "platforms": {
               "linux-x86_64": {
-                "signature": "$(cat ${APPIMAGE_FILE}.sig)",
+                "signature": "$SIG_CONTENT",
                 "url": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${APPIMAGE_FILE}"
               }
             }
@@ -249,13 +264,18 @@ jobs:
           # Windows x86_64
           MSI_FILE=$(ls *.msi 2>/dev/null | head -n 1)
           if [ -n "$MSI_FILE" ]; then
+            SIG_CONTENT=""
+            if [ -f "${MSI_FILE}.sig" ]; then
+              SIG_CONTENT=$(cat "${MSI_FILE}.sig")
+            fi
+
             cat > windows-x86_64.json <<EOF
           {
             "version": "${{ steps.version.outputs.VERSION }}",
             "date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
             "platforms": {
               "windows-x86_64": {
-                "signature": "$(cat ${MSI_FILE}.sig)",
+                "signature": "$SIG_CONTENT",
                 "url": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${MSI_FILE}"
               }
             }
