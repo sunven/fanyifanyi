@@ -147,7 +147,7 @@ export function UpdateProvider({
         setStatus(UpdateStatus.ERROR)
       }
     }
-  }, [status, errorCooldownMs])
+  }, [errorCooldownMs])
 
   /**
    * 下载并安装更新

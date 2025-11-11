@@ -1,6 +1,7 @@
 import type { AIConfig } from '@/lib/config'
+import { getVersion } from '@tauri-apps/api/app'
 import { ArrowLeft, Check, Plus, RefreshCw, Trash2 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,10 +36,18 @@ export default function Settings({ onBack }: SettingsProps) {
   const [showResetConfirm, setShowResetConfirm] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [showSaveAlert, setShowSaveAlert] = useState(false)
+  const [appVersion, setAppVersion] = useState<string>('加载中...')
 
   // 更新相关状态
   const { status, updateInfo, lastChecked, checkForUpdates: checkUpdates, error: updateError } = useUpdate()
   const [isCheckingManually, setIsCheckingManually] = useState(false)
+
+  // 获取应用版本
+  useEffect(() => {
+    getVersion().then(setAppVersion).catch(() => {
+      setAppVersion('未知版本')
+    })
+  }, [])
 
   // 新模型表单状态
   const [newModel, setNewModel] = useState<Omit<AIConfig, 'id'>>({
@@ -160,9 +169,6 @@ export default function Settings({ onBack }: SettingsProps) {
 
     return date.toLocaleDateString('zh-CN')
   }
-
-  // 获取当前版本号
-  const appVersion = '0.1.0' // 从 package.json 读取
 
   // 获取更新状态文本
   const getUpdateStatusText = () => {
