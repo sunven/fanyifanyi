@@ -28,6 +28,3 @@ dist-ssr
 .tauri/
 *.key
 !*.key.pub
-
-# Git history backup (for migration/cleanup purposes)
-.git.backup

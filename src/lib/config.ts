@@ -21,7 +21,7 @@ const DEFAULT_MODELS: AIConfig[] = [
     name: 'DeepSeek V3',
     baseURL: 'https://ark.cn-beijing.volces.com/api/v3',
     apiKey: '', // 请在 Settings 页面配置您的 API Key
-    model: 'deepseek-v3-1-terminus',
+    model: 'deepseek-v3',
   },
 ]
 
