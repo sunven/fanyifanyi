@@ -45,9 +45,9 @@ jobs:
           - platform: macos-latest
             target: x86_64-apple-darwin
             arch: x86_64
-          - platform: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-            arch: x86_64
+          # - platform: ubuntu-22.04
+          #   target: x86_64-unknown-linux-gnu
+          #   arch: x86_64
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
             arch: x86_64
@@ -72,11 +72,11 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Install dependencies (Ubuntu only)
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      # - name: Install dependencies (Ubuntu only)
+      #   if: matrix.platform == 'ubuntu-22.04'
+      #   run: |
+      #     sudo apt-get update
+      #     sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
       - name: Install frontend dependencies
         run: pnpm install
@@ -127,28 +127,28 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload release assets (Linux)
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          # AppImage
-          APPIMAGE_PATH=$(find src-tauri/target/${{ matrix.target }}/release/bundle/appimage -name "*.AppImage" | grep -v "\.AppImage\." | head -n 1)
-          if [ -f "$APPIMAGE_PATH" ]; then
-            gh release upload ${{ github.ref_name }} "$APPIMAGE_PATH" --clobber
-
-            # Updater files
-            SIG_FILE="${APPIMAGE_PATH}.sig"
-            if [ -f "$SIG_FILE" ]; then
-              gh release upload ${{ github.ref_name }} "$SIG_FILE" --clobber
-            fi
-          fi
-
-          # Deb package
-          DEB_PATH=$(find src-tauri/target/${{ matrix.target }}/release/bundle/deb -name "*.deb" | head -n 1)
-          if [ -f "$DEB_PATH" ]; then
-            gh release upload ${{ github.ref_name }} "$DEB_PATH" --clobber
-          fi
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # - name: Upload release assets (Linux)
+      #   if: matrix.platform == 'ubuntu-22.04'
+      #   run: |
+      #     # AppImage
+      #     APPIMAGE_PATH=$(find src-tauri/target/${{ matrix.target }}/release/bundle/appimage -name "*.AppImage" | grep -v "\.AppImage\." | head -n 1)
+      #     if [ -f "$APPIMAGE_PATH" ]; then
+      #       gh release upload ${{ github.ref_name }} "$APPIMAGE_PATH" --clobber
+      #
+      #       # Updater files
+      #       SIG_FILE="${APPIMAGE_PATH}.sig"
+      #       if [ -f "$SIG_FILE" ]; then
+      #         gh release upload ${{ github.ref_name }} "$SIG_FILE" --clobber
+      #       fi
+      #     fi
+      #
+      #     # Deb package
+      #     DEB_PATH=$(find src-tauri/target/${{ matrix.target }}/release/bundle/deb -name "*.deb" | head -n 1)
+      #     if [ -f "$DEB_PATH" ]; then
+      #       gh release upload ${{ github.ref_name }} "$DEB_PATH" --clobber
+      #     fi
+      #   env:
+      #     GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload release assets (Windows)
         if: matrix.platform == 'windows-latest'
@@ -238,28 +238,28 @@ jobs:
             gh release upload ${{ github.ref_name }} darwin-x86_64.json --clobber
           fi
 
-          # Linux x86_64
-          APPIMAGE_FILE=$(ls *.AppImage 2>/dev/null | grep -v "\.AppImage\." | head -n 1)
-          if [ -n "$APPIMAGE_FILE" ]; then
-            SIG_CONTENT=""
-            if [ -f "${APPIMAGE_FILE}.sig" ]; then
-              SIG_CONTENT=$(cat "${APPIMAGE_FILE}.sig")
-            fi
-
-            cat > linux-x86_64.json <<EOF
-          {
-            "version": "${{ steps.version.outputs.VERSION }}",
-            "date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "platforms": {
-              "linux-x86_64": {
-                "signature": "$SIG_CONTENT",
-                "url": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${APPIMAGE_FILE}"
-              }
-            }
-          }
-          EOF
-            gh release upload ${{ github.ref_name }} linux-x86_64.json --clobber
-          fi
+          # # Linux x86_64
+          # APPIMAGE_FILE=$(ls *.AppImage 2>/dev/null | grep -v "\.AppImage\." | head -n 1)
+          # if [ -n "$APPIMAGE_FILE" ]; then
+          #   SIG_CONTENT=""
+          #   if [ -f "${APPIMAGE_FILE}.sig" ]; then
+          #     SIG_CONTENT=$(cat "${APPIMAGE_FILE}.sig")
+          #   fi
+          #
+          #   cat > linux-x86_64.json <<EOF
+          # {
+          #   "version": "${{ steps.version.outputs.VERSION }}",
+          #   "date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+          #   "platforms": {
+          #     "linux-x86_64": {
+          #       "signature": "$SIG_CONTENT",
+          #       "url": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${APPIMAGE_FILE}"
+          #     }
+          #   }
+          # }
+          # EOF
+          #   gh release upload ${{ github.ref_name }} linux-x86_64.json --clobber
+          # fi
 
           # Windows x86_64
           MSI_FILE=$(ls *.msi 2>/dev/null | head -n 1)
