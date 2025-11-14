@@ -12,6 +12,23 @@ Streamdown 是一个用于流式渲染 Markdown 的 React 组件库。当前的�
 2. **排版不统一**: Markdown 内容（标题、列表、段落等）缺乏专业的视觉层次
 3. **嵌套列表支持不足**: 嵌套列表的层级缩进不够清晰
 
+## Why
+
+修复列表渲染问题是必要的，因为：
+
+1. **用户体验**: 列表是翻译输出中最常用的格式之一，样式问题直接影响用户对翻译结果的理解
+2. **可读性**: 被遮挡的项目符号或序号会让用户困惑，无法快速浏览列表内容
+3. **一致性**: 整个应用使用 Tailwind CSS 和 shadcn/ui，保持统一的视觉风格很重要
+4. **专业性**: 翻译工具需要提供专业的排版，Typography 插件提供业界标准样式
+5. **维护性**: 使用官方插件比自定义 CSS 更容易维护和升级
+
+## What Changes
+
+1. **添加依赖**: 在 `package.json` 中添加 `@tailwindcss/typography@^0.5.19` 开发依赖
+2. **配置插件**: 在 `src/index.css` 中添加 `@plugin "@tailwindcss/typography";` 配置
+3. **应用样式**: 在 `src/components/translate-display/index.tsx` 的 Streamdown 容器上添加 `prose prose-sm dark:prose-invert` 类
+4. **构建验证**: 确保 TypeScript 编译通过，Vite 构建成功
+
 ## 解决方案
 
 使用 Tailwind CSS Typography 插件 (`@tailwindcss/typography`) 解决样式问题：

@@ -34,7 +34,7 @@ export default function TranslationApp() {
             AI 配置
           </Button>
         </div>
-        <div className="flex gap-4 flex-1 overflow-hidden">
+        <div className="flex gap-2 flex-1 overflow-hidden">
           <div className="w-[350px] flex flex-col space-y-2">
             <div className="flex justify-between items-center">
               <label className="text-sm font-medium">源文本</label>
