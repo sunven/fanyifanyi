@@ -1,6 +1,6 @@
 import type { AIConfig } from '@/lib/config'
 import { getVersion } from '@tauri-apps/api/app'
-import { ArrowLeft, Check, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { ArrowLeft, Check, Eye, EyeOff, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import {
   AlertDialog,
@@ -36,6 +36,7 @@ export default function Settings({ onBack }: SettingsProps) {
   const [showResetConfirm, setShowResetConfirm] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [showSaveAlert, setShowSaveAlert] = useState(false)
+  const [showApiKey, setShowApiKey] = useState(false)
   const [appVersion, setAppVersion] = useState<string>('加载中...')
 
   // 更新相关状态
@@ -347,13 +348,23 @@ export default function Settings({ onBack }: SettingsProps) {
                   <label className="text-sm font-medium text-gray-900">
                     API Key
                   </label>
-                  <input
-                    type="password"
-                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
-                    placeholder="sk-..."
-                    value={newModel.apiKey}
-                    onChange={e => setNewModel(prev => ({ ...prev, apiKey: e.target.value }))}
-                  />
+                  <div className="relative">
+                    <input
+                      type={showApiKey ? "text" : "password"}
+                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono pr-10"
+                      placeholder="sk-..."
+                      value={newModel.apiKey}
+                      onChange={e => setNewModel(prev => ({ ...prev, apiKey: e.target.value }))}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowApiKey(!showApiKey)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                      title={showApiKey ? "隐藏 API Key" : "显示 API Key"}
+                    >
+                      {showApiKey ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                    </button>
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-gray-900">
@@ -458,6 +469,7 @@ function ModelCard({
   onDelete,
 }: ModelCardProps) {
   const [editForm, setEditForm] = useState(model)
+  const [showApiKey, setShowApiKey] = useState(false)
 
   const handleSave = () => {
     onSave(model.id, {
@@ -497,12 +509,22 @@ function ModelCard({
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">API Key</label>
-                <input
-                  type="password"
-                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
-                  value={editForm.apiKey}
-                  onChange={e => setEditForm(prev => ({ ...prev, apiKey: e.target.value }))}
-                />
+                <div className="relative">
+                  <input
+                    type={showApiKey ? "text" : "password"}
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono pr-10"
+                    value={editForm.apiKey}
+                    onChange={e => setEditForm(prev => ({ ...prev, apiKey: e.target.value }))}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowApiKey(!showApiKey)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                    title={showApiKey ? "隐藏 API Key" : "显示 API Key"}
+                  >
+                    {showApiKey ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                  </button>
+                </div>
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">模型标识</label>
