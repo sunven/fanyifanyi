@@ -39,7 +39,7 @@ export default function TranslateDisplay({ q }: TranslateDisplayProps) {
     <div className="flex justify-between items-center">
       <label className="text-sm font-medium">翻译结果</label>
     </div>
-    <div className="flex-1 overflow-y-auto break-words">
+    <div className="flex-1 overflow-y-auto break-words prose dark:prose-invert max-w-none">
       {isStreaming && !translatedText ? (
         <div className="flex items-center justify-center h-full text-muted-foreground">
           <Spinner className="mr-2" />
