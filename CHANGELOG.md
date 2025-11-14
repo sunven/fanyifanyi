@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.7] - 2025-11-14
+
+### Features
+
+- Integrate Tailwind Typography plugin to enhance Streamdown list styles
+- Integrate Tailwind Typography plugin to enhance Streamdown list styles
+- 添加 API Key 显示/隐藏切换功能，提升用户体验
+
 ## [0.1.6] - 2025-11-11
 
 ### Features
