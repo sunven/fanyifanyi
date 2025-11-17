@@ -22,6 +22,7 @@ interface UpdateDialogProps {
   error: { type: UpdateErrorType, message: string, recoverable: boolean } | null
   onUpdate: () => void
   onDismiss: () => void
+  onSkip?: () => void
   onRetry?: () => void
   onClearError?: () => void
 }
@@ -38,6 +39,7 @@ export function UpdateDialog({
   error,
   onUpdate,
   onDismiss,
+  onSkip,
   onRetry,
   onClearError,
 }: UpdateDialogProps) {
@@ -240,13 +242,20 @@ export function UpdateDialog({
             </div>
           )}
 
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={onDismiss}>
-              稍后提醒
-            </AlertDialogCancel>
-            <AlertDialogAction onClick={onUpdate}>
-              立即更新
-            </AlertDialogAction>
+          <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+            <div className="flex gap-2 justify-end w-full">
+              {onSkip && (
+                <AlertDialogCancel onClick={onSkip} className="flex-1 sm:flex-initial">
+                  跳过此版本
+                </AlertDialogCancel>
+              )}
+              <AlertDialogCancel onClick={onDismiss} className="flex-1 sm:flex-initial">
+                稍后提醒
+              </AlertDialogCancel>
+              <AlertDialogAction onClick={onUpdate} className="flex-1 sm:flex-initial">
+                立即更新
+              </AlertDialogAction>
+            </div>
           </AlertDialogFooter>
         </>
       )

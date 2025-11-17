@@ -13,6 +13,7 @@ function AppContent() {
     updateSuccessInfo,
     downloadAndInstall,
     dismissUpdate,
+    skipVersion,
     clearError,
     retryLastAction,
     dismissUpdateSuccess,
@@ -55,6 +56,7 @@ function AppContent() {
         error={error}
         onUpdate={handleUpdate}
         onDismiss={dismissUpdate}
+        onSkip={skipVersion}
         onRetry={handleRetry}
         onClearError={clearError}
       />

@@ -111,17 +111,40 @@ jobs:
             gh release upload ${{ github.ref_name }} "$DMG_PATH" --clobber
           fi
 
-          # App bundle (tarball)
-          APP_PATH=$(find src-tauri/target/${{ matrix.target }}/release/bundle/macos -name "*.app" | head -n 1)
-          if [ -d "$APP_PATH" ]; then
-            tar czf "fanyifanyi_${{ matrix.arch }}.app.tar.gz" -C "$(dirname "$APP_PATH")" "$(basename "$APP_PATH")"
+          # App bundle (tarball) for updater
+          # Tauri 2.x automatically generates .app.tar.gz and .sig for updater when signing is enabled
+          TARBALL=$(find src-tauri/target/${{ matrix.target }}/release/bundle/macos -name "*.app.tar.gz" ! -name "*.sig" | head -n 1)
+          
+          if [ -f "$TARBALL" ]; then
+            echo "Found updater tarball: $TARBALL"
+            
+            # Copy and rename tarball
+            cp "$TARBALL" "fanyifanyi_${{ matrix.arch }}.app.tar.gz"
             gh release upload ${{ github.ref_name }} "fanyifanyi_${{ matrix.arch }}.app.tar.gz" --clobber
-
-            # Updater files
-            SIG_FILE="fanyifanyi_${{ matrix.arch }}.app.tar.gz.sig"
-            if [ -f "$APP_PATH.tar.gz.sig" ]; then
-              cp "$APP_PATH.tar.gz.sig" "$SIG_FILE"
-              gh release upload ${{ github.ref_name }} "$SIG_FILE" --clobber
+            echo "✓ Uploaded tarball"
+            
+            # Look for signature file (should be next to the tarball)
+            SIG_SOURCE="${TARBALL}.sig"
+            if [ -f "$SIG_SOURCE" ]; then
+              cp "$SIG_SOURCE" "fanyifanyi_${{ matrix.arch }}.app.tar.gz.sig"
+              gh release upload ${{ github.ref_name }} "fanyifanyi_${{ matrix.arch }}.app.tar.gz.sig" --clobber
+              echo "✓ Uploaded signature file"
+            else
+              echo "⚠️ Warning: Signature file not found at $SIG_SOURCE"
+              echo "Bundle directory contents:"
+              ls -lah "$(dirname "$TARBALL")" || true
+              echo "All .sig files in target directory:"
+              find src-tauri/target/${{ matrix.target }}/release -name "*.sig" || echo "No .sig files found"
+            fi
+          else
+            echo "⚠️ Warning: No updater tarball found, falling back to manual creation"
+            # Fallback: create tarball manually from .app bundle
+            APP_PATH=$(find src-tauri/target/${{ matrix.target }}/release/bundle/macos -name "*.app" | head -n 1)
+            if [ -d "$APP_PATH" ]; then
+              tar czf "fanyifanyi_${{ matrix.arch }}.app.tar.gz" -C "$(dirname "$APP_PATH")" "$(basename "$APP_PATH)")"
+              gh release upload ${{ github.ref_name }} "fanyifanyi_${{ matrix.arch }}.app.tar.gz" --clobber
+              echo "✓ Created and uploaded tarball manually"
+              echo "⚠️ Note: Manual tarball will not have a signature file"
             fi
           fi
         env:

@@ -44,6 +44,7 @@ export interface UpdateContextType {
   checkForUpdates: (isManualCheck?: boolean) => Promise<void>
   downloadAndInstall: () => Promise<void>
   dismissUpdate: () => void
+  skipVersion: () => void
   clearError: () => void
   retryLastAction: () => Promise<void>
   dismissUpdateSuccess: () => void
@@ -147,7 +148,7 @@ export function UpdateProvider({
         setStatus(UpdateStatus.ERROR)
       }
     }
-  }, [errorCooldownMs])
+  }, [status, errorCooldownMs])
 
   /**
    * 下载并安装更新
@@ -187,9 +188,18 @@ export function UpdateProvider({
   }, [status])
 
   /**
-   * 忽略当前更新
+   * 稍后提醒（关闭弹窗但不忽略版本）
    */
   const dismissUpdate = useCallback(() => {
+    // 只是关闭弹窗，不保存忽略版本
+    // 下次自动检查时仍会显示此版本
+    setStatus(UpdateStatus.IDLE)
+  }, [])
+
+  /**
+   * 跳过此版本（永久忽略）
+   */
+  const skipVersion = useCallback(() => {
     if (updateInfo) {
       saveDismissedVersion(updateInfo.version)
     }
@@ -313,6 +323,7 @@ export function UpdateProvider({
     checkForUpdates: handleCheckForUpdates,
     downloadAndInstall: handleDownloadAndInstall,
     dismissUpdate,
+    skipVersion,
     clearError,
     retryLastAction,
     dismissUpdateSuccess,
@@ -327,6 +338,7 @@ export function UpdateProvider({
     handleCheckForUpdates,
     handleDownloadAndInstall,
     dismissUpdate,
+    skipVersion,
     clearError,
     retryLastAction,
     dismissUpdateSuccess,
