@@ -48,9 +48,9 @@ jobs:
           # - platform: ubuntu-22.04
           #   target: x86_64-unknown-linux-gnu
           #   arch: x86_64
-          - platform: windows-latest
-            target: x86_64-pc-windows-msvc
-            arch: x86_64
+          # - platform: windows-latest
+          #   target: x86_64-pc-windows-msvc
+          #   arch: x86_64
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -173,29 +173,29 @@ jobs:
       #   env:
       #     GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload release assets (Windows)
-        if: matrix.platform == 'windows-latest'
-        run: |
-          # MSI installer
-          $MSI_PATH = Get-ChildItem -Path "src-tauri/target/${{ matrix.target }}/release/bundle/msi" -Filter "*.msi" | Select-Object -First 1 -ExpandProperty FullName
-          if (Test-Path $MSI_PATH) {
-            gh release upload ${{ github.ref_name }} $MSI_PATH --clobber
-
-            # Updater files
-            $SIG_FILE = "$MSI_PATH.sig"
-            if (Test-Path $SIG_FILE) {
-              gh release upload ${{ github.ref_name }} $SIG_FILE --clobber
-            }
-          }
-
-          # NSIS installer
-          $NSIS_PATH = Get-ChildItem -Path "src-tauri/target/${{ matrix.target }}/release/bundle/nsis" -Filter "*.exe" | Select-Object -First 1 -ExpandProperty FullName
-          if (Test-Path $NSIS_PATH) {
-            gh release upload ${{ github.ref_name }} $NSIS_PATH --clobber
-          }
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: pwsh
+      # - name: Upload release assets (Windows)
+      #   if: matrix.platform == 'windows-latest'
+      #   run: |
+      #     # MSI installer
+      #     $MSI_PATH = Get-ChildItem -Path "src-tauri/target/${{ matrix.target }}/release/bundle/msi" -Filter "*.msi" | Select-Object -First 1 -ExpandProperty FullName
+      #     if (Test-Path $MSI_PATH) {
+      #       gh release upload ${{ github.ref_name }} $MSI_PATH --clobber
+      #
+      #       # Updater files
+      #       $SIG_FILE = "$MSI_PATH.sig"
+      #       if (Test-Path $SIG_FILE) {
+      #         gh release upload ${{ github.ref_name }} $SIG_FILE --clobber
+      #       }
+      #     }
+      #
+      #     # NSIS installer
+      #     $NSIS_PATH = Get-ChildItem -Path "src-tauri/target/${{ matrix.target }}/release/bundle/nsis" -Filter "*.exe" | Select-Object -First 1 -ExpandProperty FullName
+      #     if (Test-Path $NSIS_PATH) {
+      #       gh release upload ${{ github.ref_name }} $NSIS_PATH --clobber
+      #     }
+      #   env:
+      #     GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #   shell: pwsh
 
   generate-updater-json:
     needs: build-tauri
@@ -284,27 +284,27 @@ jobs:
           #   gh release upload ${{ github.ref_name }} linux-x86_64.json --clobber
           # fi
 
-          # Windows x86_64
-          MSI_FILE=$(ls *.msi 2>/dev/null | head -n 1)
-          if [ -n "$MSI_FILE" ]; then
-            SIG_CONTENT=""
-            if [ -f "${MSI_FILE}.sig" ]; then
-              SIG_CONTENT=$(cat "${MSI_FILE}.sig")
-            fi
-
-            cat > windows-x86_64.json <<EOF
-          {
-            "version": "${{ steps.version.outputs.VERSION }}",
-            "date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "platforms": {
-              "windows-x86_64": {
-                "signature": "$SIG_CONTENT",
-                "url": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${MSI_FILE}"
-              }
-            }
-          }
-          EOF
-            gh release upload ${{ github.ref_name }} windows-x86_64.json --clobber
-          fi
+          # # Windows x86_64
+          # MSI_FILE=$(ls *.msi 2>/dev/null | head -n 1)
+          # if [ -n "$MSI_FILE" ]; then
+          #   SIG_CONTENT=""
+          #   if [ -f "${MSI_FILE}.sig" ]; then
+          #     SIG_CONTENT=$(cat "${MSI_FILE}.sig")
+          #   fi
+          #
+          #   cat > windows-x86_64.json <<EOF
+          # {
+          #   "version": "${{ steps.version.outputs.VERSION }}",
+          #   "date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+          #   "platforms": {
+          #     "windows-x86_64": {
+          #       "signature": "$SIG_CONTENT",
+          #       "url": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${MSI_FILE}"
+          #     }
+          #   }
+          # }
+          # EOF
+          #   gh release upload ${{ github.ref_name }} windows-x86_64.json --clobber
+          # fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

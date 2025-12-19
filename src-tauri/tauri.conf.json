@@ -40,7 +40,7 @@
       "endpoints": [
         "https://github.com/sunven/fanyifanyi/releases/latest/download/{{target}}-{{arch}}.json"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM2RDNBN0EwQjNFRUYyREUKUldUZTh1NnpvS2ZUTmsrd3RVZytrWjUwK3hiWG9SUWV6NlR1MXRTWXd0Ymg2WVZvSitUeG1JWkwK"
+      "pubkey": "RWRVRKavfsFAJitXi+eZLh0BVFMBygdEB0MvJ3tDB5QFvkKMYG8e7fid"
     }
   }
 }
