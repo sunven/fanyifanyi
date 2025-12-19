@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.8] - 2025-12-19
+
+### Bug Fixes
+
+- Update
+- Build
+
 ## [0.1.7] - 2025-11-14
 
 ### Features
