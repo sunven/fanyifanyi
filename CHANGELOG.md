@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.12] - 2025-12-19
+
+### Bug Fixes
+
+- Enable updater artifacts generation in Tauri build
+
 ## [0.1.11] - 2025-12-19
 
 ### Miscellaneous Tasks
