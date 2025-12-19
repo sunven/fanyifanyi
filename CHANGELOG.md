@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.10] - 2025-12-19
+
+### Bug Fixes
+
+- Correct tar command syntax in release workflow
+
 ## [0.1.9] - 2025-12-19
 
 ### Bug Fixes
