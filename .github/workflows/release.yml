@@ -141,7 +141,7 @@ jobs:
             # Fallback: create tarball manually from .app bundle
             APP_PATH=$(find src-tauri/target/${{ matrix.target }}/release/bundle/macos -name "*.app" | head -n 1)
             if [ -d "$APP_PATH" ]; then
-              tar czf "fanyifanyi_${{ matrix.arch }}.app.tar.gz" -C "$(dirname "$APP_PATH")" "$(basename "$APP_PATH)")"
+              tar czf "fanyifanyi_${{ matrix.arch }}.app.tar.gz" -C "$(dirname "$APP_PATH")" "$(basename "$APP_PATH")"
               gh release upload ${{ github.ref_name }} "fanyifanyi_${{ matrix.arch }}.app.tar.gz" --clobber
               echo "✓ Created and uploaded tarball manually"
               echo "⚠️ Note: Manual tarball will not have a signature file"
