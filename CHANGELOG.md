@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.11] - 2025-12-19
+
+### Miscellaneous Tasks
+
+- Improve release workflow and remove unused script
+
 ## [0.1.10] - 2025-12-19
 
 ### Bug Fixes
