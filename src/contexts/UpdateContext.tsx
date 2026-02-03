@@ -1,363 +1,178 @@
-import type { Update } from '@tauri-apps/plugin-updater'
-import type { ReactNode } from 'react'
-import type { UpdateError, UpdateInfo, UpdateSuccessInfo } from '../lib/updater'
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  checkForUpdates,
-  checkUpdateSuccess,
-  confirmUpdateSuccess,
-  downloadAndInstall,
-  extractUpdateInfo,
-  getUpdateSettings,
-  saveDismissedVersion,
-  saveLastChecked,
-} from '../lib/updater'
+import type { ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import type { UpdateHandle, UpdateInfo } from "../lib/updater";
+import { checkForUpdate, getCurrentVersion, relaunchApp } from "../lib/updater";
+
+const DISMISSED_VERSION_KEY = "updater_dismissed_version";
 
 /**
- * 更新状态枚举
+ * Update context value interface
  */
-export enum UpdateStatus {
-  IDLE = 'idle',
-  CHECKING = 'checking',
-  AVAILABLE = 'available',
-  DOWNLOADING = 'downloading',
-  READY = 'ready',
-  ERROR = 'error',
+export interface UpdateContextValue {
+  hasUpdate: boolean;
+  updateInfo: UpdateInfo | null;
+  updateHandle: UpdateHandle | null;
+  isChecking: boolean;
+  error: string | null;
+  isDismissed: boolean;
+  isDevMode: boolean;
+  checkUpdate: () => Promise<boolean>;
+  dismissUpdate: () => void;
+  resetDismiss: () => void;
+  downloadAndInstall: () => Promise<void>;
 }
 
-/**
- * 更新上下文接口
- */
-export interface UpdateContextType {
-  // 状态
-  status: UpdateStatus
-  updateAvailable: boolean
-  updateInfo: UpdateInfo | null
-  downloading: boolean
-  downloadProgress: number
-  downloadTotal: number
-  error: UpdateError | null
-  lastChecked: Date | null
-  updateSuccessInfo: UpdateSuccessInfo | null
+const UpdateContext = createContext<UpdateContextValue | undefined>(undefined);
 
-  // 方法
-  checkForUpdates: (isManualCheck?: boolean) => Promise<void>
-  downloadAndInstall: () => Promise<void>
-  dismissUpdate: () => void
-  skipVersion: () => void
-  clearError: () => void
-  retryLastAction: () => Promise<void>
-  dismissUpdateSuccess: () => void
-}
-
-const UpdateContext = createContext<UpdateContextType | undefined>(undefined)
-
-/**
- * 更新上下文 Provider 属性
- */
 interface UpdateProviderProps {
-  children: ReactNode
-  checkOnMount?: boolean
-  checkInterval?: number // 检查间隔（毫秒）
+  children: ReactNode;
+  checkOnMount?: boolean;
 }
 
 /**
- * 更新上下文 Provider
+ * Simplified update provider following cc-switch pattern
  */
 export function UpdateProvider({
   children,
   checkOnMount = true,
-  checkInterval = 24 * 60 * 60 * 1000, // 默认 24 小时
 }: UpdateProviderProps) {
-  const [status, setStatus] = useState<UpdateStatus>(UpdateStatus.IDLE)
-  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null)
-  const [downloadProgress, setDownloadProgress] = useState(0)
-  const [downloadTotal, setDownloadTotal] = useState(0)
-  const [error, setError] = useState<UpdateError | null>(null)
-  const [lastChecked, setLastChecked] = useState<Date | null>(null)
-  const [updateSuccessInfo, setUpdateSuccessInfo] = useState<UpdateSuccessInfo | null>(null)
+  const [hasUpdate, setHasUpdate] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [updateHandle, setUpdateHandle] = useState<UpdateHandle | null>(null);
+  const [isChecking, setIsChecking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isDismissed, setIsDismissed] = useState(false);
+  const isDevMode = import.meta.env.DEV;
 
-  const updateRef = useRef<Update | null>(null)
-  const checkIntervalRef = useRef<NodeJS.Timeout | null>(null)
-  const lastActionRef = useRef<'check' | 'download' | null>(null)
-  const lastErrorTimeRef = useRef<number>(0)
-  const errorCooldownMs = 60 * 60 * 1000 // 错误冷却时间：1小时
+  const checkUpdate = useCallback(async (): Promise<boolean> => {
+    setIsChecking(true);
+    setError(null);
 
-  /**
-   * 检查更新
-   */
-  const handleCheckForUpdates = useCallback(async (isManualCheck = false) => {
-    // 如果正在检查或下载，不重复执行
-    if (status === UpdateStatus.CHECKING || status === UpdateStatus.DOWNLOADING) {
-      return
+    // In dev mode, show a message and return
+    if (isDevMode) {
+      await new Promise(resolve => setTimeout(resolve, 500)); // Small delay for visual feedback
+      setError("开发模式下无法检查更新，请使用生产版本测试此功能");
+      setIsChecking(false);
+      return false;
     }
-
-    // 如果不是手动检查，且在错误冷却期内，跳过检查
-    if (!isManualCheck) {
-      const now = Date.now()
-      if (now - lastErrorTimeRef.current < errorCooldownMs) {
-        console.warn('Skipping update check due to recent error (cooldown period)')
-        return
-      }
-    }
-
-    lastActionRef.current = 'check'
-    setStatus(UpdateStatus.CHECKING)
-    setError(null)
 
     try {
-      const update = await checkForUpdates()
+      const result = await checkForUpdate();
 
-      // 保存检查时间
-      saveLastChecked()
-      setLastChecked(new Date())
-
-      if (update) {
-        // 检查是否是被忽略的版本
-        const settings = getUpdateSettings()
-        if (settings.dismissedVersion === update.version) {
-          setStatus(UpdateStatus.IDLE)
-          return
+      // Check if dismissed
+      const dismissedVersion = localStorage.getItem(DISMISSED_VERSION_KEY);
+      if (result.available && result.update) {
+        if (dismissedVersion === result.update.version) {
+          setIsDismissed(true);
+          setHasUpdate(false);
+          return false;
         }
 
-        // 有新版本可用
-        updateRef.current = update
-        setUpdateInfo(extractUpdateInfo(update))
-        setStatus(UpdateStatus.AVAILABLE)
+        setHasUpdate(true);
+        setUpdateInfo(result.update);
+        setUpdateHandle(result.update);
+        setIsDismissed(false);
+        return true;
       }
-      else {
-        // 没有新版本
-        setStatus(UpdateStatus.IDLE)
-        setUpdateInfo(null)
-      }
+
+      setHasUpdate(false);
+      setUpdateInfo(null);
+      setUpdateHandle(null);
+      return false;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      setError(message);
+      return false;
+    } finally {
+      setIsChecking(false);
     }
-    catch (err) {
-      const updateError = err as UpdateError
+  }, [isDevMode]);
 
-      // 记录错误时间（用于冷却）
-      lastErrorTimeRef.current = Date.now()
-
-      // 所有类型的检查错误都静默处理（不打扰用户）
-      // 只在控制台记录，不显示弹窗
-      console.warn('Update check failed:', updateError.type, updateError.message)
-      setStatus(UpdateStatus.IDLE)
-
-      // 只有手动检查时才显示错误
-      if (isManualCheck) {
-        setError(updateError)
-        setStatus(UpdateStatus.ERROR)
-      }
-    }
-  }, [status, errorCooldownMs])
-
-  /**
-   * 下载并安装更新
-   */
-  const handleDownloadAndInstall = useCallback(async () => {
-    if (!updateRef.current || (status !== UpdateStatus.AVAILABLE && status !== UpdateStatus.ERROR)) {
-      return
-    }
-
-    lastActionRef.current = 'download'
-    setStatus(UpdateStatus.DOWNLOADING)
-    setError(null)
-    setDownloadProgress(0)
-    setDownloadTotal(0)
-
-    try {
-      await downloadAndInstall(
-        updateRef.current,
-        (progress, total) => {
-          setDownloadProgress(progress)
-          setDownloadTotal(total)
-        },
-      )
-
-      // 下载完成，准备重启
-      setStatus(UpdateStatus.READY)
-    }
-    catch (err) {
-      const updateError = err as UpdateError
-
-      // 下载错误提供重试选项（可恢复）
-      // 验证错误显示警告（不可恢复，安全问题）
-      // 安装错误显示错误信息（不可恢复）
-      setError(updateError)
-      setStatus(UpdateStatus.ERROR)
-    }
-  }, [status])
-
-  /**
-   * 稍后提醒（关闭弹窗但不忽略版本）
-   */
   const dismissUpdate = useCallback(() => {
-    // 只是关闭弹窗，不保存忽略版本
-    // 下次自动检查时仍会显示此版本
-    setStatus(UpdateStatus.IDLE)
-  }, [])
-
-  /**
-   * 跳过此版本（永久忽略）
-   */
-  const skipVersion = useCallback(() => {
     if (updateInfo) {
-      saveDismissedVersion(updateInfo.version)
+      localStorage.setItem(DISMISSED_VERSION_KEY, updateInfo.version);
     }
-    setStatus(UpdateStatus.IDLE)
-    setUpdateInfo(null)
-    updateRef.current = null
-  }, [updateInfo])
+    setHasUpdate(false);
+    setUpdateInfo(null);
+    setUpdateHandle(null);
+    setIsDismissed(true);
+  }, [updateInfo]);
 
-  /**
-   * 清除错误
-   */
-  const clearError = useCallback(() => {
-    setError(null)
-    // 如果有可用更新，返回到 AVAILABLE 状态，否则返回 IDLE
-    if (updateRef.current && updateInfo) {
-      setStatus(UpdateStatus.AVAILABLE)
-    }
-    else {
-      setStatus(UpdateStatus.IDLE)
-    }
-  }, [updateInfo])
+  const resetDismiss = useCallback(() => {
+    localStorage.removeItem(DISMISSED_VERSION_KEY);
+    setIsDismissed(false);
+  }, []);
 
-  /**
-   * 重试上次失败的操作
-   */
-  const retryLastAction = useCallback(async () => {
-    if (!lastActionRef.current) {
-      return
+  const downloadAndInstall = useCallback(async () => {
+    if (!updateHandle) {
+      return;
     }
 
-    if (lastActionRef.current === 'check') {
-      // 重试时视为手动检查
-      await handleCheckForUpdates(true)
+    try {
+      await updateHandle.downloadAndInstall();
+      await relaunchApp();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      setError(message);
     }
-    else if (lastActionRef.current === 'download') {
-      await handleDownloadAndInstall()
-    }
-  }, [handleCheckForUpdates, handleDownloadAndInstall])
+  }, [updateHandle]);
 
-  /**
-   * 关闭更新成功提示
-   */
-  const dismissUpdateSuccess = useCallback(() => {
-    confirmUpdateSuccess()
-    setUpdateSuccessInfo(null)
-  }, [])
-
-  /**
-   * 检测应用是否刚刚更新成功
-   */
+  // Auto-check on mount after delay (only in production)
   useEffect(() => {
-    // 使用 Promise 包装以避免直接在 useEffect 中调用 setState
-    Promise.resolve().then(() => {
-      const successInfo = checkUpdateSuccess()
-      if (successInfo.wasUpdated) {
-        setUpdateSuccessInfo(successInfo)
-      }
-    })
-  }, [])
+    if (checkOnMount && !isDevMode) {
+      const timer = setTimeout(() => {
+        checkUpdate();
+      }, 1000);
 
-  /**
-   * 启动时检查更新
-   */
-  useEffect(() => {
-    if (checkOnMount) {
-      const settings = getUpdateSettings()
-      if (settings.autoCheck) {
-        // 延迟 2 秒后检查，避免影响应用启动
-        const timer = setTimeout(() => {
-          handleCheckForUpdates()
-        }, 2000)
-
-        return () => clearTimeout(timer)
-      }
+      return () => clearTimeout(timer);
     }
-  }, [checkOnMount, handleCheckForUpdates])
+  }, [checkOnMount, checkUpdate, isDevMode]);
 
-  /**
-   * 定时检查更新
-   */
-  useEffect(() => {
-    if (checkInterval > 0) {
-      checkIntervalRef.current = setInterval(() => {
-        const settings = getUpdateSettings()
-        if (settings.autoCheck) {
-          handleCheckForUpdates()
-        }
-      }, checkInterval)
-
-      return () => {
-        if (checkIntervalRef.current) {
-          clearInterval(checkIntervalRef.current)
-        }
-      }
-    }
-  }, [checkInterval, handleCheckForUpdates])
-
-  /**
-   * 加载最后检查时间
-   */
-  useEffect(() => {
-    const settings = getUpdateSettings()
-    if (settings.lastChecked) {
-      // 使用临时变量避免直接在 useEffect 中调用 setState
-      const lastCheckedDate = new Date(settings.lastChecked)
-      // 延迟设置以避免 React 警告
-      Promise.resolve().then(() => setLastChecked(lastCheckedDate))
-    }
-  }, [])
-
-  const value: UpdateContextType = useMemo(() => ({
-    status,
-    updateAvailable: status === UpdateStatus.AVAILABLE,
-    updateInfo,
-    downloading: status === UpdateStatus.DOWNLOADING,
-    downloadProgress,
-    downloadTotal,
-    error,
-    lastChecked,
-    updateSuccessInfo,
-    checkForUpdates: handleCheckForUpdates,
-    downloadAndInstall: handleDownloadAndInstall,
-    dismissUpdate,
-    skipVersion,
-    clearError,
-    retryLastAction,
-    dismissUpdateSuccess,
-  }), [
-    status,
-    updateInfo,
-    downloadProgress,
-    downloadTotal,
-    error,
-    lastChecked,
-    updateSuccessInfo,
-    handleCheckForUpdates,
-    handleDownloadAndInstall,
-    dismissUpdate,
-    skipVersion,
-    clearError,
-    retryLastAction,
-    dismissUpdateSuccess,
-  ])
+  const value: UpdateContextValue = useMemo(
+    () => ({
+      hasUpdate,
+      updateInfo,
+      updateHandle,
+      isChecking,
+      error,
+      isDismissed,
+      isDevMode,
+      checkUpdate,
+      dismissUpdate,
+      resetDismiss,
+      downloadAndInstall,
+    }),
+    [
+      hasUpdate,
+      updateInfo,
+      updateHandle,
+      isChecking,
+      error,
+      isDismissed,
+      isDevMode,
+      checkUpdate,
+      dismissUpdate,
+      resetDismiss,
+      downloadAndInstall,
+    ]
+  );
 
   return (
     <UpdateContext.Provider value={value}>
       {children}
     </UpdateContext.Provider>
-  )
+  );
 }
 
 /**
- * 使用更新上下文的 Hook
+ * Hook to use update context
  */
 export function useUpdate() {
-  const context = useContext(UpdateContext)
+  const context = useContext(UpdateContext);
   if (context === undefined) {
-    throw new Error('useUpdate must be used within an UpdateProvider')
+    throw new Error("useUpdate must be used within an UpdateProvider");
   }
-  return context
+  return context;
 }
+
+export { getCurrentVersion };

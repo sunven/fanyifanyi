@@ -1,6 +1,5 @@
 import type { AIConfig } from '@/lib/config'
-import { getVersion } from '@tauri-apps/api/app'
-import { ArrowLeft, Check, Eye, EyeOff, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { ArrowLeft, RefreshCw } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import {
   AlertDialog,
@@ -12,9 +11,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { UpdateStatus, useUpdate } from '@/contexts/UpdateContext'
+import { getCurrentVersion, useUpdate } from '@/contexts/UpdateContext'
 import {
   addAIConfig,
   deleteAIConfig,
@@ -25,7 +25,7 @@ import {
 } from '@/lib/config'
 
 interface SettingsProps {
-  onBack: () => void
+  onBack?: () => void
 }
 
 export default function Settings({ onBack }: SettingsProps) {
@@ -36,21 +36,19 @@ export default function Settings({ onBack }: SettingsProps) {
   const [showResetConfirm, setShowResetConfirm] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [showSaveAlert, setShowSaveAlert] = useState(false)
-  const [showApiKey, setShowApiKey] = useState(false)
   const [appVersion, setAppVersion] = useState<string>('加载中...')
 
-  // 更新相关状态
-  const { status, updateInfo, lastChecked, checkForUpdates: checkUpdates, error: updateError } = useUpdate()
-  const [isCheckingManually, setIsCheckingManually] = useState(false)
+  // Update state
+  const { hasUpdate, updateInfo, isChecking, checkUpdate, dismissUpdate, downloadAndInstall, error, isDevMode } = useUpdate()
 
-  // 获取应用版本
+  // Get app version
   useEffect(() => {
-    getVersion().then(setAppVersion).catch(() => {
+    getCurrentVersion().then(setAppVersion).catch(() => {
       setAppVersion('未知版本')
     })
   }, [])
 
-  // 新模型表单状态
+  // New model form state
   const [newModel, setNewModel] = useState<Omit<AIConfig, 'id'>>({
     name: '',
     baseURL: 'https://api.openai.com/v1',
@@ -58,18 +56,18 @@ export default function Settings({ onBack }: SettingsProps) {
     model: 'gpt-4o-mini',
   })
 
-  // 切换激活的模型
+  // Set active model
   const handleSetActive = (id: string) => {
     setActiveModel(id)
     setConfigs(getAllAIConfigs())
   }
 
-  // 开始编辑
+  // Start editing
   const handleEdit = (id: string) => {
     setEditingId(id)
   }
 
-  // 保存编辑
+  // Save edit
   const handleSaveEdit = (id: string, updates: Partial<Omit<AIConfig, 'id'>>) => {
     try {
       updateAIConfig(id, updates)
@@ -82,12 +80,12 @@ export default function Settings({ onBack }: SettingsProps) {
     }
   }
 
-  // 取消编辑
+  // Cancel edit
   const handleCancelEdit = () => {
     setEditingId(null)
   }
 
-  // 添加新模型
+  // Add new model
   const handleAddModel = () => {
     try {
       if (!newModel.name || !newModel.baseURL || !newModel.model) {
@@ -111,7 +109,7 @@ export default function Settings({ onBack }: SettingsProps) {
     }
   }
 
-  // 删除模型
+  // Delete model
   const handleDeleteModel = (id: string) => {
     try {
       deleteAIConfig(id)
@@ -124,196 +122,174 @@ export default function Settings({ onBack }: SettingsProps) {
     }
   }
 
-  // 重置配置
+  // Reset config
   const handleReset = () => {
     setShowResetConfirm(true)
   }
 
-  // 确认重置
+  // Confirm reset
   const confirmReset = () => {
     const defaultConfigs = resetAIConfig()
     setConfigs(defaultConfigs)
     setShowResetConfirm(false)
   }
 
-  // 手动检查更新
+  // Handle check for updates
   const handleCheckUpdates = async () => {
-    setIsCheckingManually(true)
-    try {
-      // 传递 true 表示这是手动检查，即使失败也会显示错误
-      await checkUpdates(true)
-    }
-    finally {
-      setIsCheckingManually(false)
-    }
+    await checkUpdate()
   }
 
-  // 格式化最后检查时间
-  const formatLastChecked = (date: Date | null) => {
-    if (!date)
-      return '从未检查'
-
-    const now = new Date()
-    const diff = now.getTime() - date.getTime()
-    const minutes = Math.floor(diff / 60000)
-    const hours = Math.floor(diff / 3600000)
-    const days = Math.floor(diff / 86400000)
-
-    if (minutes < 1)
-      return '刚刚'
-    if (minutes < 60)
-      return `${minutes} 分钟前`
-    if (hours < 24)
-      return `${hours} 小时前`
-    if (days < 7)
-      return `${days} 天前`
-
-    return date.toLocaleDateString('zh-CN')
-  }
-
-  // 获取更新状态文本
-  const getUpdateStatusText = () => {
-    if (status === UpdateStatus.CHECKING || isCheckingManually) {
-      return '正在检查更新...'
-    }
-    if (status === UpdateStatus.AVAILABLE && updateInfo) {
-      return `发现新版本 ${updateInfo.version}`
-    }
-    if (status === UpdateStatus.ERROR && updateError) {
-      return `检查失败: ${updateError.message}`
-    }
-    if (status === UpdateStatus.DOWNLOADING) {
-      return '正在下载更新...'
-    }
-    if (status === UpdateStatus.READY) {
-      return '更新已就绪，请重启应用'
-    }
-    return '当前已是最新版本'
+  // Handle download and install
+  const handleDownloadAndInstall = async () => {
+    await downloadAndInstall()
   }
 
   return (
     <div className="p-4 max-w-4xl mx-auto">
       <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onBack}
-            className="mr-2"
-          >
-            <ArrowLeft className="h-4 w-4 mr-1" />
-            返回
-          </Button>
-          <h1 className="text-2xl font-bold">AI 模型配置</h1>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={handleReset}>
-            重置为默认
-          </Button>
-          <Button size="sm" onClick={() => setShowAddDialog(true)}>
-            <Plus className="h-4 w-4 mr-1" />
-            添加模型
-          </Button>
+        <div className="flex items-center gap-2">
+          {onBack && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onBack}
+              className="mr-2"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          )}
+          <h1 className="text-2xl font-bold">设置</h1>
         </div>
       </div>
 
-      <div className="space-y-4">
-        {configs.models.map(model => (
-          <ModelCard
-            key={model.id}
-            model={model}
-            isActive={model.id === configs.activeModelId}
-            isEditing={editingId === model.id}
-            onSetActive={handleSetActive}
-            onEdit={handleEdit}
-            onSave={handleSaveEdit}
-            onCancel={handleCancelEdit}
-            onDelete={() => setShowDeleteConfirm(model.id)}
-          />
-        ))}
-      </div>
-
-      {/* 提示信息 */}
-      <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-md">
-        <p className="text-sm text-blue-800">
-          <strong>提示：</strong>
-          {' '}
-          配置保存在本地浏览器的 localStorage 中，不会上传到服务器。点击模型卡片可切换使用的模型。
-        </p>
-      </div>
-
-      {/* 更新管理部分 */}
-      <div className="mt-8">
-        <h2 className="text-xl font-bold mb-4">关于</h2>
+      <div className="space-y-6">
+        {/* AI Model Configuration Section */}
         <Card className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold">AI 模型配置</h2>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={handleReset}>
+                重置
+              </Button>
+              <Button size="sm" onClick={() => setShowAddDialog(true)}>
+                添加模型
+              </Button>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            {configs.models.map(model => (
+              <ModelCard
+                key={model.id}
+                model={model}
+                isActive={model.id === configs.activeModelId}
+                isEditing={editingId === model.id}
+                onSetActive={handleSetActive}
+                onEdit={handleEdit}
+                onSave={handleSaveEdit}
+                onCancel={handleCancelEdit}
+                onDelete={() => setShowDeleteConfirm(model.id)}
+              />
+            ))}
+          </div>
+
+          <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-md">
+            <p className="text-sm text-blue-800 dark:text-blue-300">
+              <strong>提示：</strong>
+              {' '}
+              配置保存在本地浏览器的 localStorage 中，不会上传到服务器。点击模型卡片可切换使用的模型。
+            </p>
+          </div>
+        </Card>
+
+        {/* About/Update Section */}
+        <Card className="p-6">
+          <h2 className="text-xl font-bold mb-4">关于</h2>
+
           <div className="space-y-6">
-            {/* 版本信息 */}
+            {/* Version */}
             <div className="flex items-center justify-between pb-4 border-b">
               <div>
-                <h3 className="text-lg font-semibold mb-1">应用版本</h3>
-                <p className="text-2xl font-bold text-blue-600">{appVersion}</p>
+                <h3 className="text-sm font-medium text-muted-foreground mb-1">当前版本</h3>
+                <p className="text-2xl font-bold">{appVersion}</p>
               </div>
+              <Badge variant="secondary" className="text-sm">桌面应用</Badge>
             </div>
 
-            {/* 更新检查 */}
-            <div className="space-y-3">
+            {/* Update */}
+            <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-base font-semibold mb-1">软件更新</h3>
-                  <p className="text-sm text-gray-600">
-                    最后检查:
-                    {' '}
-                    {formatLastChecked(lastChecked)}
-                  </p>
+                  <h3 className="text-sm font-medium text-muted-foreground mb-1">软件更新</h3>
+                  {isDevMode && (
+                    <p className="text-sm text-amber-600 dark:text-amber-400">开发模式 - 更新功能仅在生产版本可用</p>
+                  )}
+                  {error && !isDevMode && (
+                    <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+                  )}
+                  {!error && hasUpdate && (
+                    <p className="text-sm text-green-600 dark:text-green-400">
+                      发现新版本
+                      {' '}
+                      {updateInfo?.version}
+                    </p>
+                  )}
+                  {!error && !hasUpdate && !isChecking && (
+                    <p className="text-sm text-muted-foreground">当前已是最新版本</p>
+                  )}
                 </div>
                 <Button
                   size="sm"
-                  onClick={handleCheckUpdates}
-                  disabled={status === UpdateStatus.CHECKING || isCheckingManually || status === UpdateStatus.DOWNLOADING}
+                  variant={hasUpdate ? 'default' : 'outline'}
+                  onClick={hasUpdate ? handleDownloadAndInstall : handleCheckUpdates}
+                  disabled={isChecking}
                 >
-                  <RefreshCw className={`h-4 w-4 mr-1 ${(status === UpdateStatus.CHECKING || isCheckingManually) ? 'animate-spin' : ''}`} />
-                  检查更新
+                  {isChecking
+                    ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 mr-1 animate-spin" />
+                        检查中
+                      </>
+                    )
+                    : hasUpdate
+                      ? (
+                        <>
+                          更新到
+                          {' '}
+                          {updateInfo?.version}
+                        </>
+                      )
+                      : (
+                        <>
+                          <RefreshCw className="h-4 w-4 mr-1" />
+                          检查更新
+                        </>
+                      )}
                 </Button>
               </div>
 
-              {/* 更新状态显示 */}
-              <div
-                className={`p-3 rounded-md ${
-                  status === UpdateStatus.AVAILABLE
-                    ? 'bg-green-50 border border-green-200'
-                    : status === UpdateStatus.ERROR
-                      ? 'bg-red-50 border border-red-200'
-                      : status === UpdateStatus.CHECKING || isCheckingManually
-                        ? 'bg-blue-50 border border-blue-200'
-                        : 'bg-gray-50 border border-gray-200'
-                }`}
-              >
-                <p
-                  className={`text-sm ${
-                    status === UpdateStatus.AVAILABLE
-                      ? 'text-green-800'
-                      : status === UpdateStatus.ERROR
-                        ? 'text-red-800'
-                        : status === UpdateStatus.CHECKING || isCheckingManually
-                          ? 'text-blue-800'
-                          : 'text-gray-700'
-                  }`}
-                >
-                  {getUpdateStatusText()}
-                </p>
-                {status === UpdateStatus.AVAILABLE && updateInfo && (
-                  <div className="mt-2 text-sm text-gray-600">
-                    <p className="font-medium">更新说明:</p>
-                    <p className="mt-1 whitespace-pre-wrap">{updateInfo.body || '无更新说明'}</p>
-                  </div>
-                )}
-              </div>
+              {/* Update notes */}
+              {hasUpdate && updateInfo?.body && (
+                <div className="p-4 bg-muted/50 rounded-md">
+                  <p className="text-sm font-medium mb-2">更新说明</p>
+                  <p className="text-sm whitespace-pre-wrap text-muted-foreground">{updateInfo.body}</p>
+                </div>
+              )}
+
+              {/* Skip version button */}
+              {hasUpdate && (
+                <div className="flex justify-end">
+                  <Button size="sm" variant="ghost" onClick={dismissUpdate}>
+                    跳过此版本
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
         </Card>
       </div>
 
-      {/* 添加模型对话框 */}
+      {/* Add Model Dialog */}
       <AlertDialog open={showAddDialog} onOpenChange={setShowAddDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -321,58 +297,48 @@ export default function Settings({ onBack }: SettingsProps) {
             <AlertDialogDescription>
               <div className="space-y-4 mt-4">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-900">
+                  <label className="text-sm font-medium text-gray-900 dark:text-gray-100">
                     模型名称 *
                   </label>
                   <input
                     type="text"
-                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-700"
                     placeholder="GPT-4o Mini"
                     value={newModel.name}
                     onChange={e => setNewModel(prev => ({ ...prev, name: e.target.value }))}
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-900">
+                  <label className="text-sm font-medium text-gray-900 dark:text-gray-100">
                     API Base URL *
                   </label>
                   <input
                     type="text"
-                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-700"
                     placeholder="https://api.openai.com/v1"
                     value={newModel.baseURL}
                     onChange={e => setNewModel(prev => ({ ...prev, baseURL: e.target.value }))}
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-900">
+                  <label className="text-sm font-medium text-gray-900 dark:text-gray-100">
                     API Key
                   </label>
-                  <div className="relative">
-                    <input
-                      type={showApiKey ? "text" : "password"}
-                      className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono pr-10"
-                      placeholder="sk-..."
-                      value={newModel.apiKey}
-                      onChange={e => setNewModel(prev => ({ ...prev, apiKey: e.target.value }))}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowApiKey(!showApiKey)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                      title={showApiKey ? "隐藏 API Key" : "显示 API Key"}
-                    >
-                      {showApiKey ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
-                    </button>
-                  </div>
+                  <input
+                    type="text"
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-700"
+                    placeholder="sk-..."
+                    value={newModel.apiKey}
+                    onChange={e => setNewModel(prev => ({ ...prev, apiKey: e.target.value }))}
+                  />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-900">
+                  <label className="text-sm font-medium text-gray-900 dark:text-gray-100">
                     模型标识 *
                   </label>
                   <input
                     type="text"
-                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-700"
                     placeholder="gpt-4o-mini"
                     value={newModel.model}
                     onChange={e => setNewModel(prev => ({ ...prev, model: e.target.value }))}
@@ -390,7 +356,7 @@ export default function Settings({ onBack }: SettingsProps) {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* 删除确认对话框 */}
+      {/* Delete Confirm Dialog */}
       <AlertDialog open={!!showDeleteConfirm} onOpenChange={() => setShowDeleteConfirm(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -408,7 +374,7 @@ export default function Settings({ onBack }: SettingsProps) {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* 保存失败提示对话框 */}
+      {/* Save Error Dialog */}
       <AlertDialog open={showSaveAlert} onOpenChange={setShowSaveAlert}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -425,7 +391,7 @@ export default function Settings({ onBack }: SettingsProps) {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* 重置确认对话框 */}
+      {/* Reset Confirm Dialog */}
       <AlertDialog open={showResetConfirm} onOpenChange={setShowResetConfirm}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -446,7 +412,7 @@ export default function Settings({ onBack }: SettingsProps) {
   )
 }
 
-// 模型卡片组件
+// Model Card Component
 interface ModelCardProps {
   model: AIConfig
   isActive: boolean
@@ -469,7 +435,6 @@ function ModelCard({
   onDelete,
 }: ModelCardProps) {
   const [editForm, setEditForm] = useState(model)
-  const [showApiKey, setShowApiKey] = useState(false)
 
   const handleSave = () => {
     onSave(model.id, {
@@ -483,7 +448,7 @@ function ModelCard({
   return (
     <Card
       className={`p-4 transition-all ${
-        isActive ? 'border-blue-500 border-2 bg-blue-50' : 'hover:border-gray-400'
+        isActive ? 'border-blue-500 border-2 bg-blue-50 dark:bg-blue-950/20' : 'hover:border-gray-400'
       }`}
     >
       {isEditing
@@ -493,7 +458,7 @@ function ModelCard({
                 <label className="text-sm font-medium">模型名称</label>
                 <input
                   type="text"
-                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-700"
                   value={editForm.name}
                   onChange={e => setEditForm(prev => ({ ...prev, name: e.target.value }))}
                 />
@@ -502,35 +467,25 @@ function ModelCard({
                 <label className="text-sm font-medium">API Base URL</label>
                 <input
                   type="text"
-                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-700"
                   value={editForm.baseURL}
                   onChange={e => setEditForm(prev => ({ ...prev, baseURL: e.target.value }))}
                 />
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">API Key</label>
-                <div className="relative">
-                  <input
-                    type={showApiKey ? "text" : "password"}
-                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono pr-10"
-                    value={editForm.apiKey}
-                    onChange={e => setEditForm(prev => ({ ...prev, apiKey: e.target.value }))}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowApiKey(!showApiKey)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                    title={showApiKey ? "隐藏 API Key" : "显示 API Key"}
-                  >
-                    {showApiKey ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
-                  </button>
-                </div>
+                <input
+                  type="password"
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-700"
+                  value={editForm.apiKey}
+                  onChange={e => setEditForm(prev => ({ ...prev, apiKey: e.target.value }))}
+                />
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">模型标识</label>
                 <input
                   type="text"
-                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-700"
                   value={editForm.model}
                   onChange={e => setEditForm(prev => ({ ...prev, model: e.target.value }))}
                 />
@@ -552,13 +507,10 @@ function ModelCard({
                   <div className="flex items-center gap-2 mb-2">
                     <h3 className="text-lg font-semibold">{model.name}</h3>
                     {isActive && (
-                      <span className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-500 text-white rounded-full">
-                        <Check className="h-3 w-3" />
-                        使用中
-                      </span>
+                      <Badge variant="default" className="bg-blue-500">使用中</Badge>
                     )}
                   </div>
-                  <div className="space-y-1 text-sm text-gray-600">
+                  <div className="space-y-1 text-sm text-muted-foreground">
                     <p>
                       <span className="font-medium">模型:</span>
                       {' '}
@@ -582,7 +534,6 @@ function ModelCard({
                       size="sm"
                       onClick={() => onSetActive(model.id)}
                     >
-                      <Check className="h-4 w-4 mr-1" />
                       设为当前
                     </Button>
                   )}
@@ -599,7 +550,7 @@ function ModelCard({
                       variant="outline"
                       onClick={onDelete}
                     >
-                      <Trash2 className="h-4 w-4" />
+                      删除
                     </Button>
                   </div>
                 </div>
