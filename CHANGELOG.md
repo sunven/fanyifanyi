@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.13] - 2026-02-03
+
+### Refactor
+
+- Simplify update handling and remove unused dialogs
+
 ## [0.1.12] - 2025-12-19
 
 ### Bug Fixes
