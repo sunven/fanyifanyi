@@ -99,26 +99,8 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install
 
-      - name: Setup Tauri signing key
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: |
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            echo "$TAURI_SIGNING_PRIVATE_KEY" > "$RUNNER_TEMP\\tauri-key"
-            echo "TAURI_SIGNING_PRIVATE_KEY_PATH=$RUNNER_TEMP\\tauri-key" >> $GITHUB_ENV
-          else
-            echo "$TAURI_SIGNING_PRIVATE_KEY" > "$RUNNER_TEMP/tauri-key"
-            echo "TAURI_SIGNING_PRIVATE_KEY_PATH=$RUNNER_TEMP/tauri-key" >> $GITHUB_ENV
-          fi
-          echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" >> $GITHUB_ENV
-        shell: bash
-
       - name: Build Tauri app
         run: pnpm tauri build --target ${{ matrix.target }}
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Upload release assets (macOS)
         if: matrix.platform == 'macos-latest'
@@ -129,40 +111,18 @@ jobs:
             gh release upload ${{ github.ref_name }} "$DMG_PATH" --clobber
           fi
 
-          # App bundle (tarball) for updater
-          # Tauri 2.x automatically generates .app.tar.gz and .sig for updater when signing is enabled
+          # App bundle (tarball)
           TARBALL=$(find src-tauri/target/${{ matrix.target }}/release/bundle/macos -name "*.app.tar.gz" ! -name "*.sig" | head -n 1)
-          
+
           if [ -f "$TARBALL" ]; then
-            echo "Found updater tarball: $TARBALL"
-            
-            # Copy and rename tarball
             cp "$TARBALL" "fanyifanyi_${{ matrix.arch }}.app.tar.gz"
             gh release upload ${{ github.ref_name }} "fanyifanyi_${{ matrix.arch }}.app.tar.gz" --clobber
-            echo "✓ Uploaded tarball"
-            
-            # Look for signature file (should be next to the tarball)
-            SIG_SOURCE="${TARBALL}.sig"
-            if [ -f "$SIG_SOURCE" ]; then
-              cp "$SIG_SOURCE" "fanyifanyi_${{ matrix.arch }}.app.tar.gz.sig"
-              gh release upload ${{ github.ref_name }} "fanyifanyi_${{ matrix.arch }}.app.tar.gz.sig" --clobber
-              echo "✓ Uploaded signature file"
-            else
-              echo "⚠️ Warning: Signature file not found at $SIG_SOURCE"
-              echo "Bundle directory contents:"
-              ls -lah "$(dirname "$TARBALL")" || true
-              echo "All .sig files in target directory:"
-              find src-tauri/target/${{ matrix.target }}/release -name "*.sig" || echo "No .sig files found"
-            fi
           else
-            echo "⚠️ Warning: No updater tarball found, falling back to manual creation"
             # Fallback: create tarball manually from .app bundle
             APP_PATH=$(find src-tauri/target/${{ matrix.target }}/release/bundle/macos -name "*.app" | head -n 1)
             if [ -d "$APP_PATH" ]; then
               tar czf "fanyifanyi_${{ matrix.arch }}.app.tar.gz" -C "$(dirname "$APP_PATH")" "$(basename "$APP_PATH")"
               gh release upload ${{ github.ref_name }} "fanyifanyi_${{ matrix.arch }}.app.tar.gz" --clobber
-              echo "✓ Created and uploaded tarball manually"
-              echo "⚠️ Note: Manual tarball will not have a signature file"
             fi
           fi
         env:
@@ -237,18 +197,12 @@ jobs:
 
           # macOS aarch64
           if [ -f "fanyifanyi_aarch64.app.tar.gz" ]; then
-            SIG_CONTENT=""
-            if [ -f "fanyifanyi_aarch64.app.tar.gz.sig" ]; then
-              SIG_CONTENT=$(cat fanyifanyi_aarch64.app.tar.gz.sig)
-            fi
-
             cat > darwin-aarch64.json <<EOF
           {
             "version": "${{ steps.version.outputs.VERSION }}",
             "date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
             "platforms": {
               "darwin-aarch64": {
-                "signature": "$SIG_CONTENT",
                 "url": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/fanyifanyi_aarch64.app.tar.gz"
               }
             }
