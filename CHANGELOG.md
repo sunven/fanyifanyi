@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.19] - 2026-02-03
+
+### Bug Fixes
+
+- Update updater endpoint in tauri configuration
+
 ## [0.1.17] - 2026-02-03
 
 ### Miscellaneous Tasks
