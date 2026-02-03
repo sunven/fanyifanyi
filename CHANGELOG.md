@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.16] - 2026-02-03
+
+### Bug Fixes
+
+- Update public key in tauri configuration
+
+### Miscellaneous Tasks
+
+- Remove Tauri signing requirements for simplified CI
+- Remove updater pubkey (no signing)
+
 ## [0.1.15] - 2026-02-03
 
 ### Bug Fixes
