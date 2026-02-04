@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.26] - 2026-02-04
+
+### Features
+
+- 更新说明支持 markdown 格式渲染
+
 ## [0.1.25] - 2026-02-04
 
 ### Miscellaneous Tasks
