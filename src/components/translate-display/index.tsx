@@ -4,6 +4,7 @@ import { useDebounce } from 'react-use'
 import { Streamdown } from 'streamdown'
 import { Spinner } from '@/components/ui/spinner'
 import { translateStream } from '@/lib/ai'
+import { logger } from '@/lib/logger'
 
 interface TranslateDisplayProps {
   q: string
@@ -41,17 +42,16 @@ export default function TranslateDisplay({ q }: TranslateDisplayProps) {
         if (abortControllerRef.current.signal.aborted) {
           break
         }
-        console.log('chunk', chunk)
         setTranslatedText(prev => prev + chunk)
       }
     }
     catch (error) {
       // 如果是 AbortError，忽略它
       if (error instanceof Error && error.name === 'AbortError') {
-        // 翻译被取消，不做任何处理
         return
       }
-      // 其他错误，抛出异常
+      // 其他错误，先记录日志再抛出
+      logger.error('翻译失败', error)
       throw error
     }
     finally {

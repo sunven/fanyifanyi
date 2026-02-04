@@ -1,4 +1,5 @@
 use tauri_plugin_http::reqwest;
+use tauri_plugin_log::{Target, TargetKind};
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -19,10 +20,29 @@ async fn get_dict_data(q: String) -> Result<serde_json::Value, String> {
         urlencoding::encode(&dicts.to_string())
     );
 
-    let response = reqwest::get(&url).await.map_err(|e| e.to_string())?;
+    let response = match reqwest::get(&url).await {
+        Ok(resp) => resp,
+        Err(e) => {
+            log::error!("词典 API 请求失败 (网络错误): {}", e);
+            return Err(format!("网络请求失败: {}", e));
+        }
+    };
 
-    let text = response.text().await.map_err(|e| e.to_string())?;
-    let json: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    let text = match response.text().await {
+        Ok(t) => t,
+        Err(e) => {
+            log::error!("词典 API 请求失败 (读取响应): {}", e);
+            return Err(format!("读取响应失败: {}", e));
+        }
+    };
+
+    let json: serde_json::Value = match serde_json::from_str(&text) {
+        Ok(j) => j,
+        Err(e) => {
+            log::error!("词典 API 请求失败 (解析 JSON): {}", e);
+            return Err(format!("解析响应失败: {}", e));
+        }
+    };
 
     Ok(json)
 }
@@ -30,6 +50,18 @@ async fn get_dict_data(q: String) -> Result<serde_json::Value, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .targets([
+                    Target::new(TargetKind::Stdout),
+                    Target::new(TargetKind::LogDir {
+                        file_name: Some("app.log".to_string()),
+                    }),
+                    Target::new(TargetKind::Webview),
+                ])
+                .level(log::LevelFilter::Info)
+                .build(),
+        )
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_updater::Builder::new().build())

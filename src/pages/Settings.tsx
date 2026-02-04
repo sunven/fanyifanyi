@@ -23,6 +23,7 @@ import {
   setActiveModel,
   updateAIConfig,
 } from '@/lib/config'
+import { logger } from '@/lib/logger'
 
 interface SettingsProps {
   onBack?: () => void
@@ -246,25 +247,25 @@ export default function Settings({ onBack }: SettingsProps) {
                 >
                   {isChecking
                     ? (
-                      <>
-                        <RefreshCw className="h-4 w-4 mr-1 animate-spin" />
-                        检查中
-                      </>
-                    )
-                    : hasUpdate
-                      ? (
                         <>
-                          更新到
-                          {' '}
-                          {updateInfo?.version}
+                          <RefreshCw className="h-4 w-4 mr-1 animate-spin" />
+                          检查中
                         </>
                       )
+                    : hasUpdate
+                      ? (
+                          <>
+                            更新到
+                            {' '}
+                            {updateInfo?.version}
+                          </>
+                        )
                       : (
-                        <>
-                          <RefreshCw className="h-4 w-4 mr-1" />
-                          检查更新
-                        </>
-                      )}
+                          <>
+                            <RefreshCw className="h-4 w-4 mr-1" />
+                            检查更新
+                          </>
+                        )}
                 </Button>
               </div>
 

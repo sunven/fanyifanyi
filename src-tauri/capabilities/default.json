@@ -9,6 +9,7 @@
     "core:default",
     "opener:default",
     "http:default",
-    "updater:default"
+    "updater:default",
+    "log:default"
   ]
 }
