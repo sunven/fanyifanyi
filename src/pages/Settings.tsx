@@ -39,7 +39,7 @@ export default function Settings({ onBack }: SettingsProps) {
   const [appVersion, setAppVersion] = useState<string>('加载中...')
 
   // Update state
-  const { hasUpdate, updateInfo, isChecking, checkUpdate, dismissUpdate, downloadAndInstall, error, isDevMode } = useUpdate()
+  const { hasUpdate, updateInfo, isChecking, isDownloading, checkUpdate, dismissUpdate, downloadAndInstall, retryDownload, error, isDevMode } = useUpdate()
 
   // Get app version
   useEffect(() => {
@@ -144,6 +144,11 @@ export default function Settings({ onBack }: SettingsProps) {
     await downloadAndInstall()
   }
 
+  // Handle retry download
+  const handleRetryDownload = async () => {
+    await retryDownload()
+  }
+
   return (
     <div className="p-4 max-w-4xl mx-auto">
       <div className="flex items-center justify-between mb-6">
@@ -218,57 +223,96 @@ export default function Settings({ onBack }: SettingsProps) {
 
             {/* Update */}
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1">
                   <h3 className="text-sm font-medium text-muted-foreground mb-1">软件更新</h3>
                   {isDevMode && (
                     <p className="text-sm text-amber-600 dark:text-amber-400">开发模式 - 更新功能仅在生产版本可用</p>
                   )}
-                  {error && !isDevMode && (
-                    <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+                  {!isDevMode && error && (
+                    <p className="text-sm text-red-600 dark:text-red-400 mb-2">{error}</p>
                   )}
-                  {!error && hasUpdate && (
-                    <p className="text-sm text-green-600 dark:text-green-400">
+                  {!isDevMode && !error && hasUpdate && (
+                    <p className="text-sm text-green-600 dark:text-green-400 mb-2">
                       发现新版本
                       {' '}
                       {updateInfo?.version}
                     </p>
                   )}
-                  {!error && !hasUpdate && !isChecking && (
+                  {!isDevMode && !error && !hasUpdate && !isChecking && !isDownloading && (
                     <p className="text-sm text-muted-foreground">当前已是最新版本</p>
                   )}
+                  {!isDevMode && isDownloading && (
+                    <p className="text-sm text-blue-600 dark:text-blue-400">正在下载更新...</p>
+                  )}
                 </div>
-                <Button
-                  size="sm"
-                  variant={hasUpdate ? 'default' : 'outline'}
-                  onClick={hasUpdate ? handleDownloadAndInstall : handleCheckUpdates}
-                  disabled={isChecking}
-                >
-                  {isChecking
-                    ? (
-                        <>
-                          <RefreshCw className="h-4 w-4 mr-1 animate-spin" />
-                          检查中
-                        </>
-                      )
-                    : hasUpdate
+                <div className="flex gap-2">
+                  {/* Main action button */}
+                  <Button
+                    size="sm"
+                    variant={hasUpdate && !error ? 'default' : 'outline'}
+                    onClick={
+                      isChecking || isDownloading
+                        ? undefined
+                        : hasUpdate && error
+                          ? handleRetryDownload
+                          : hasUpdate
+                            ? handleDownloadAndInstall
+                            : handleCheckUpdates
+                    }
+                    disabled={isChecking || isDownloading}
+                  >
+                    {isChecking
                       ? (
                           <>
-                            更新到
-                            {' '}
-                            {updateInfo?.version}
+                            <RefreshCw className="h-4 w-4 mr-1 animate-spin" />
+                            检查中
                           </>
                         )
-                      : (
-                          <>
-                            <RefreshCw className="h-4 w-4 mr-1" />
-                            检查更新
-                          </>
-                        )}
-                </Button>
+                      : isDownloading
+                        ? (
+                            <>
+                              <RefreshCw className="h-4 w-4 mr-1 animate-spin" />
+                              下载中
+                            </>
+                          )
+                        : hasUpdate && error
+                          ? (
+                              <>
+                                <RefreshCw className="h-4 w-4 mr-1" />
+                                重试下载
+                              </>
+                            )
+                          : hasUpdate
+                            ? (
+                                <>
+                                  更新到
+                                  {' '}
+                                  {updateInfo?.version}
+                                </>
+                              )
+                            : (
+                                <>
+                                  <RefreshCw className="h-4 w-4 mr-1" />
+                                  检查更新
+                                </>
+                              )}
+                  </Button>
+                  {/* Re-check button (when there's an error) */}
+                  {!isChecking && !isDownloading && error && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleCheckUpdates}
+                    >
+                      <RefreshCw className="h-4 w-4 mr-1" />
+                      重新检查
+                    </Button>
+                  )}
+                </div>
               </div>
 
-              {/* Update notes */}
+              {/* Update notes - show when hasUpdate, even if there's an error */}
               {hasUpdate && updateInfo?.body && (
                 <div className="p-4 bg-muted/50 rounded-md">
                   <p className="text-sm font-medium mb-2">更新说明</p>
@@ -276,8 +320,8 @@ export default function Settings({ onBack }: SettingsProps) {
                 </div>
               )}
 
-              {/* Skip version button */}
-              {hasUpdate && (
+              {/* Skip version button - only show when no error */}
+              {hasUpdate && !error && (
                 <div className="flex justify-end">
                   <Button size="sm" variant="ghost" onClick={dismissUpdate}>
                     跳过此版本

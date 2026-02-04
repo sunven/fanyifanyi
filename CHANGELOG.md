@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Bug Fixes
+
+- **updater**: Improve updater error recovery - add retry mechanism and better error messages
+
 ## [0.1.22] - 2026-02-04
 
 ### Miscellaneous Tasks
