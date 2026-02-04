@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.24] - 2026-02-04
+
+### Miscellaneous Tasks
+
+- **release**: Update release workflow and dependencies
+
 ## [0.1.23] - 2026-02-04
 
 ### Features
