@@ -23,7 +23,6 @@ import {
   setActiveModel,
   updateAIConfig,
 } from '@/lib/config'
-import { logger } from '@/lib/logger'
 
 interface SettingsProps {
   onBack?: () => void
