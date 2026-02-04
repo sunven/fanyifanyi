@@ -1,6 +1,7 @@
 import type { AIConfig } from '@/lib/config'
 import { ArrowLeft, RefreshCw } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import Markdown from 'react-markdown'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -316,7 +317,9 @@ export default function Settings({ onBack }: SettingsProps) {
               {hasUpdate && updateInfo?.body && (
                 <div className="p-4 bg-muted/50 rounded-md">
                   <p className="text-sm font-medium mb-2">更新说明</p>
-                  <p className="text-sm whitespace-pre-wrap text-muted-foreground">{updateInfo.body}</p>
+                  <div className="text-sm text-muted-foreground prose prose-sm dark:prose-invert max-w-none">
+                    <Markdown>{updateInfo.body}</Markdown>
+                  </div>
                 </div>
               )}
 
