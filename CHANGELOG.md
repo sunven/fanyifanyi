@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.22] - 2026-02-04
+
+### Miscellaneous Tasks
+
+- Remove outdated OpenSpec documentation and commands
+- Add logging capabilities with tauri-plugin-log
+- **release**: Enhance release workflow and update updater endpoint
+- Remove unused logger import from Settings component
+
 ## [0.1.21] - 2026-02-03
 
 ### Miscellaneous Tasks
