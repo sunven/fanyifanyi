@@ -221,6 +221,11 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup git-cliff
+        uses: kenji-miyake/setup-git-cliff@v2
 
       - name: Extract version from tag
         id: version
@@ -231,9 +236,25 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Generate updater JSON files
+      - name: Generate release notes for updater
+        run: |
+          git-cliff --tag ${{ github.ref_name }} --strip all > release-assets/notes.md
+
+      - name: Generate unified latest.json
         run: |
           cd release-assets
+
+          # Read release notes and escape for JSON
+          NOTES=$(cat notes.md | sed 's/"/\\"/g' | tr '\n' '\\n' | sed 's/\\/\\\\/g')
+
+          # Start building the JSON
+          cat > latest.json <<EOF
+          {
+            "version": "${{ steps.version.outputs.VERSION }}",
+            "notes": "$NOTES",
+            "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "platforms": {
+          EOF
 
           # macOS aarch64
           if [ -f "fanyifanyi_aarch64.app.tar.gz" ]; then
@@ -242,87 +263,21 @@ jobs:
               SIG_CONTENT=$(cat fanyifanyi_aarch64.app.tar.gz.sig)
             fi
 
-            cat > darwin-aarch64.json <<EOF
-          {
-            "version": "${{ steps.version.outputs.VERSION }}",
-            "date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "platforms": {
+            cat >> latest.json <<EOF
               "darwin-aarch64": {
                 "signature": "$SIG_CONTENT",
                 "url": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/fanyifanyi_aarch64.app.tar.gz"
-              }
-            }
-          }
+              },
           EOF
-            gh release upload ${{ github.ref_name }} darwin-aarch64.json --clobber
           fi
 
-          # # macOS x86_64
-          # if [ -f "fanyifanyi_x86_64.app.tar.gz" ]; then
-          #   SIG_CONTENT=""
-          #   if [ -f "fanyifanyi_x86_64.app.tar.gz.sig" ]; then
-          #     SIG_CONTENT=$(cat fanyifanyi_x86_64.app.tar.gz.sig)
-          #   fi
-          #
-          #   cat > darwin-x86_64.json <<EOF
-          # {
-          #   "version": "${{ steps.version.outputs.VERSION }}",
-          #   "date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-          #   "platforms": {
-          #     "darwin-x86_64": {
-          #       "signature": "$SIG_CONTENT",
-          #       "url": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/fanyifanyi_x86_64.app.tar.gz"
-          #     }
-          #   }
-          # }
-          # EOF
-          #   gh release upload ${{ github.ref_name }} darwin-x86_64.json --clobber
-          # fi
+          # Close the JSON (remove trailing comma)
+          sed -i '$ s/,$//' latest.json
+          echo "  }" >> latest.json
+          echo "}" >> latest.json
 
-          # # Linux x86_64
-          # APPIMAGE_FILE=$(ls *.AppImage 2>/dev/null | grep -v "\.AppImage\." | head -n 1)
-          # if [ -n "$APPIMAGE_FILE" ]; then
-          #   SIG_CONTENT=""
-          #   if [ -f "${APPIMAGE_FILE}.sig" ]; then
-          #     SIG_CONTENT=$(cat "${APPIMAGE_FILE}.sig")
-          #   fi
-          #
-          #   cat > linux-x86_64.json <<EOF
-          # {
-          #   "version": "${{ steps.version.outputs.VERSION }}",
-          #   "date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-          #   "platforms": {
-          #     "linux-x86_64": {
-          #       "signature": "$SIG_CONTENT",
-          #       "url": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${APPIMAGE_FILE}"
-          #     }
-          #   }
-          # }
-          # EOF
-          #   gh release upload ${{ github.ref_name }} linux-x86_64.json --clobber
-          # fi
-
-          # # Windows x86_64
-          # MSI_FILE=$(ls *.msi 2>/dev/null | head -n 1)
-          # if [ -n "$MSI_FILE" ]; then
-          #   SIG_CONTENT=""
-          #   if [ -f "${MSI_FILE}.sig" ]; then
-          #     SIG_CONTENT=$(cat "${MSI_FILE}.sig")
-          #   fi
-          #
-          #   cat > windows-x86_64.json <<EOF
-          # {
-          #   "version": "${{ steps.version.outputs.VERSION }}",
-          #   "date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-          #   "platforms": {
-          #     "windows-x86_64": {
-          #       "signature": "$SIG_CONTENT",
-          #       "url": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${MSI_FILE}"
-          #     }
-          #   }
-          # }
-          # EOF
-          #   gh release upload ${{ github.ref_name }} windows-x86_64.json --clobber
-          # fi
+          # Upload latest.json to both current release and latest release
+          gh release upload ${{ github.ref_name }} latest.json --clobber
+          gh release upload latest latest.json --clobber || true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,11 @@
+{
+  "version": "0.1.21",
+  "notes": "Release v0.1.21",
+  "pub_date": "2026-02-03T11:47:34Z",
+  "platforms": {
+    "darwin-aarch64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTUVJadmZLTy9xOWorMk9ucVZzVFB5K25VUVFXRUt6cHNXQVFXQ1NIeVZrNm5veGhEVVJhQWI2bThIZ3crUDVFQkV3bzJlVmlUa3cyY0hWZXg5dXdyZ2FvQlF3Nk93Q2dRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzcwMTE5MTU4CWZpbGU6ZmFueWlmYW55aS5hcHAudGFyLmd6ClVvNFFmajBlZEdBNzd1cjNtUitsSElOc0FpVG5UNmM5UWZTTzN6M2xvOVFhTFlKV3AvM2h6NDJIOVAyN0tEVEp3U2dvczQzYVk2c3FLZ3NGS0JhTEN3PT0K",
+      "url": "https://github.com/sunven/fanyifanyi/releases/download/v0.1.21/fanyifanyi_aarch64.app.tar.gz"
+    }
+  }
+}
