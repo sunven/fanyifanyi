@@ -10,6 +10,7 @@
     "opener:default",
     "http:default",
     "updater:default",
-    "log:default"
+    "log:default",
+    "process:allow-restart"
   ]
 }
