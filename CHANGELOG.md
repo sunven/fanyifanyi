@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.25] - 2026-02-04
+
+### Miscellaneous Tasks
+
+- Update package manager to pnpm@9.15.9 in package.json
+
 ## [0.1.24] - 2026-02-04
 
 ### Miscellaneous Tasks
