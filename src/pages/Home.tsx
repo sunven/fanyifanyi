@@ -43,7 +43,7 @@ export default function TranslationApp() {
             <div className="relative flex-1 p-1">
               <Textarea
                 placeholder="输入要翻译的文本..."
-                className="resize-none h-full"
+                className="resize-none h-full field-sizing-fixed overflow-y-auto"
                 value={sourceText}
                 onChange={e => setSourceText(e.target.value)}
               />
