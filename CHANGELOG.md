@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.27] - 2026-02-28
+
+### Bug Fixes
+
+- Update Textarea class for improved styling and overflow handling
+
 ## [0.1.26] - 2026-02-04
 
 ### Features
