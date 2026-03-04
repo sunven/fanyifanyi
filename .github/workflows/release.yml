@@ -218,17 +218,8 @@ jobs:
         run: |
           cd release-assets
 
-          # Read release notes and escape for JSON
-          NOTES=$(cat notes.md | sed 's/"/\\"/g' | tr '\n' '\\n' | sed 's/\\/\\\\/g')
-
-          # Start building the JSON
-          cat > latest.json <<EOF
-          {
-            "version": "${{ steps.version.outputs.VERSION }}",
-            "notes": "$NOTES",
-            "pub_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "platforms": {
-          EOF
+          # Build platforms object
+          PLATFORMS="{}"
 
           # macOS aarch64
           if [ -f "fanyifanyi_aarch64.app.tar.gz" ]; then
@@ -236,19 +227,17 @@ jobs:
             if [ -f "fanyifanyi_aarch64.app.tar.gz.sig" ]; then
               SIG_CONTENT=$(cat fanyifanyi_aarch64.app.tar.gz.sig)
             fi
-
-            cat >> latest.json <<EOF
-              "darwin-aarch64": {
-                "signature": "$SIG_CONTENT",
-                "url": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/fanyifanyi_aarch64.app.tar.gz"
-              },
-          EOF
+            PLATFORMS=$(echo "$PLATFORMS" | jq --arg sig "$SIG_CONTENT" \
+              '. + {"darwin-aarch64": {"signature": $sig, "url": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/fanyifanyi_aarch64.app.tar.gz"}}')
           fi
 
-          # Close the JSON (remove trailing comma)
-          sed -i '$ s/,$//' latest.json
-          echo "  }" >> latest.json
-          echo "}" >> latest.json
+          # Generate final JSON using jq for proper escaping
+          jq -n \
+            --arg version "${{ steps.version.outputs.VERSION }}" \
+            --rawfile notes notes.md \
+            --arg pub_date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --argjson platforms "$PLATFORMS" \
+            '{version: $version, notes: $notes, pub_date: $pub_date, platforms: $platforms}' > latest.json
 
           # Upload latest.json to both current release and latest release
           gh release upload ${{ github.ref_name }} latest.json --clobber
