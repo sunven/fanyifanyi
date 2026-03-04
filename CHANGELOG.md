@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.28] - 2026-03-04
+
+### Bug Fixes
+
+- Correct JSON escaping for release notes in updater
+
 ## [0.1.27] - 2026-02-28
 
 ### Bug Fixes
