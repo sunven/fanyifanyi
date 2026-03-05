@@ -152,7 +152,7 @@ export default function Settings({ onBack }: SettingsProps) {
 
   return (
     <div className="p-4 max-w-4xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+      <div className="sticky top-0 z-10 bg-background flex items-center justify-between mb-6 py-2 -mx-4 px-4 border-b">
         <div className="flex items-center gap-2">
           {onBack && (
             <Button
