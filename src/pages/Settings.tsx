@@ -248,6 +248,12 @@ export default function Settings({ onBack }: SettingsProps) {
                   )}
                 </div>
                 <div className="flex gap-2">
+                  {/* Skip version button */}
+                  {hasUpdate && !error && !isChecking && !isDownloading && (
+                    <Button size="sm" variant="ghost" onClick={dismissUpdate}>
+                      跳过此版本
+                    </Button>
+                  )}
                   {/* Main action button */}
                   <Button
                     size="sm"
@@ -320,15 +326,6 @@ export default function Settings({ onBack }: SettingsProps) {
                   <div className="text-sm text-muted-foreground prose prose-sm dark:prose-invert max-w-none">
                     <Markdown>{updateInfo.body}</Markdown>
                   </div>
-                </div>
-              )}
-
-              {/* Skip version button - only show when no error */}
-              {hasUpdate && !error && (
-                <div className="flex justify-end">
-                  <Button size="sm" variant="ghost" onClick={dismissUpdate}>
-                    跳过此版本
-                  </Button>
                 </div>
               )}
             </div>
