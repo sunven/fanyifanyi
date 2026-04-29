@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.29] - 2026-04-29
+
+### Features
+
+- Add skip version button in settings for update management
+- Make settings page header sticky on scroll
+- Enhance settings page with skip version button functionality
+- Add api key visibility toggles
+
+### Miscellaneous Tasks
+
+- Openspec
+
 ## [0.1.28] - 2026-03-04
 
 ### Bug Fixes
