@@ -1,5 +1,5 @@
 import type { AIConfig } from '@/lib/config'
-import { ArrowLeft, RefreshCw } from 'lucide-react'
+import { ArrowLeft, Eye, EyeOff, RefreshCw } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import Markdown from 'react-markdown'
 import {
@@ -37,6 +37,7 @@ export default function Settings({ onBack }: SettingsProps) {
   const [showResetConfirm, setShowResetConfirm] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [showSaveAlert, setShowSaveAlert] = useState(false)
+  const [showNewApiKey, setShowNewApiKey] = useState(false)
   const [appVersion, setAppVersion] = useState<string>('加载中...')
 
   // Update state
@@ -97,6 +98,7 @@ export default function Settings({ onBack }: SettingsProps) {
       addAIConfig(newModel)
       setConfigs(getAllAIConfigs())
       setShowAddDialog(false)
+      setShowNewApiKey(false)
       setNewModel({
         name: '',
         baseURL: 'https://api.openai.com/v1',
@@ -107,6 +109,13 @@ export default function Settings({ onBack }: SettingsProps) {
     catch {
       setSaveError('添加失败，请重试')
       setShowSaveAlert(true)
+    }
+  }
+
+  const handleAddDialogOpenChange = (open: boolean) => {
+    setShowAddDialog(open)
+    if (!open) {
+      setShowNewApiKey(false)
     }
   }
 
@@ -177,7 +186,13 @@ export default function Settings({ onBack }: SettingsProps) {
               <Button variant="outline" size="sm" onClick={handleReset}>
                 重置
               </Button>
-              <Button size="sm" onClick={() => setShowAddDialog(true)}>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setShowNewApiKey(false)
+                  setShowAddDialog(true)
+                }}
+              >
                 添加模型
               </Button>
             </div>
@@ -334,7 +349,7 @@ export default function Settings({ onBack }: SettingsProps) {
       </div>
 
       {/* Add Model Dialog */}
-      <AlertDialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+      <AlertDialog open={showAddDialog} onOpenChange={handleAddDialogOpenChange}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>添加新模型</AlertDialogTitle>
@@ -368,13 +383,28 @@ export default function Settings({ onBack }: SettingsProps) {
                   <label className="text-sm font-medium text-gray-900 dark:text-gray-100">
                     API Key
                   </label>
-                  <input
-                    type="text"
-                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-700"
-                    placeholder="sk-..."
-                    value={newModel.apiKey}
-                    onChange={e => setNewModel(prev => ({ ...prev, apiKey: e.target.value }))}
-                  />
+                  <div className="relative">
+                    <input
+                      type={showNewApiKey ? 'text' : 'password'}
+                      className="w-full px-3 py-2 pr-10 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-700"
+                      placeholder="sk-..."
+                      value={newModel.apiKey}
+                      onChange={e => setNewModel(prev => ({ ...prev, apiKey: e.target.value }))}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      title={showNewApiKey ? '隐藏 API Key' : '显示 API Key'}
+                      aria-label={showNewApiKey ? '隐藏 API Key' : '显示 API Key'}
+                      onClick={() => setShowNewApiKey(prev => !prev)}
+                    >
+                      {showNewApiKey
+                        ? <EyeOff className="h-4 w-4" />
+                        : <Eye className="h-4 w-4" />}
+                    </Button>
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-gray-900 dark:text-gray-100">
@@ -392,7 +422,7 @@ export default function Settings({ onBack }: SettingsProps) {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setShowAddDialog(false)}>取消</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => handleAddDialogOpenChange(false)}>取消</AlertDialogCancel>
             <AlertDialogAction onClick={handleAddModel}>
               添加
             </AlertDialogAction>
@@ -479,6 +509,7 @@ function ModelCard({
   onDelete,
 }: ModelCardProps) {
   const [editForm, setEditForm] = useState(model)
+  const [showApiKey, setShowApiKey] = useState(false)
 
   const handleSave = () => {
     onSave(model.id, {
@@ -487,6 +518,17 @@ function ModelCard({
       apiKey: editForm.apiKey,
       model: editForm.model,
     })
+    setShowApiKey(false)
+  }
+
+  const handleCancel = () => {
+    setShowApiKey(false)
+    onCancel()
+  }
+
+  const handleStartEdit = () => {
+    setShowApiKey(false)
+    onEdit(model.id)
   }
 
   return (
@@ -518,12 +560,27 @@ function ModelCard({
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">API Key</label>
-                <input
-                  type="password"
-                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-700"
-                  value={editForm.apiKey}
-                  onChange={e => setEditForm(prev => ({ ...prev, apiKey: e.target.value }))}
-                />
+                <div className="relative">
+                  <input
+                    type={showApiKey ? 'text' : 'password'}
+                    className="w-full px-3 py-2 pr-10 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-700"
+                    value={editForm.apiKey}
+                    onChange={e => setEditForm(prev => ({ ...prev, apiKey: e.target.value }))}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    title={showApiKey ? '隐藏 API Key' : '显示 API Key'}
+                    aria-label={showApiKey ? '隐藏 API Key' : '显示 API Key'}
+                    onClick={() => setShowApiKey(prev => !prev)}
+                  >
+                    {showApiKey
+                      ? <EyeOff className="h-4 w-4" />
+                      : <Eye className="h-4 w-4" />}
+                  </Button>
+                </div>
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">模型标识</label>
@@ -538,7 +595,7 @@ function ModelCard({
                 <Button size="sm" onClick={handleSave}>
                   保存
                 </Button>
-                <Button size="sm" variant="outline" onClick={onCancel}>
+                <Button size="sm" variant="outline" onClick={handleCancel}>
                   取消
                 </Button>
               </div>
@@ -565,11 +622,31 @@ function ModelCard({
                       {' '}
                       {model.baseURL}
                     </p>
-                    <p>
+                    <div className="flex items-start gap-1">
                       <span className="font-medium">Key:</span>
-                      {' '}
-                      {model.apiKey ? '••••••••' : '未设置'}
-                    </p>
+                      {model.apiKey
+                        ? (
+                            <>
+                              <span className="min-w-0 flex-1 break-all">
+                                {showApiKey ? model.apiKey : '••••••••'}
+                              </span>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                                title={showApiKey ? '隐藏 API Key' : '显示 API Key'}
+                                aria-label={showApiKey ? '隐藏 API Key' : '显示 API Key'}
+                                onClick={() => setShowApiKey(prev => !prev)}
+                              >
+                                {showApiKey
+                                  ? <EyeOff className="h-4 w-4" />
+                                  : <Eye className="h-4 w-4" />}
+                              </Button>
+                            </>
+                          )
+                        : <span>未设置</span>}
+                    </div>
                   </div>
                 </div>
                 <div className="flex flex-col gap-2">
@@ -585,7 +662,7 @@ function ModelCard({
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => onEdit(model.id)}
+                      onClick={handleStartEdit}
                     >
                       编辑
                     </Button>
