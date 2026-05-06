@@ -2,6 +2,7 @@ import { StopCircle } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { useDebounce } from 'react-use'
 import { Streamdown } from 'streamdown'
+import CopyTextButton from '@/components/CopyText'
 import { Spinner } from '@/components/ui/spinner'
 import { translateStream } from '@/lib/ai'
 import { logger } from '@/lib/logger'
@@ -73,16 +74,19 @@ export default function TranslateDisplay({ q }: TranslateDisplayProps) {
     <div className="flex flex-col h-full space-y-2 p-2">
       <div className="flex justify-between items-center">
         <label className="text-sm font-medium">翻译结果</label>
-        {isStreaming && (
-          <button
-            type="button"
-            onClick={handleStop}
-            className="p-1 text-muted-foreground hover:text-foreground transition-colors"
-            title="停止翻译"
-          >
-            <StopCircle size={18} className="animate-spin" />
-          </button>
-        )}
+        <div className="flex items-center gap-1">
+          <CopyTextButton text={translatedText} />
+          {isStreaming && (
+            <button
+              type="button"
+              onClick={handleStop}
+              className="p-1 text-muted-foreground hover:text-foreground transition-colors"
+              title="停止翻译"
+            >
+              <StopCircle size={18} className="animate-spin" />
+            </button>
+          )}
+        </div>
       </div>
       <div className="flex-1 overflow-y-auto break-words prose prose-sm dark:prose-invert max-w-none pr-2">
         {isStreaming && !translatedText
