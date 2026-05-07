@@ -35,6 +35,8 @@ jobs:
 
   build-tauri:
     needs: create-release
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     strategy:
       fail-fast: false
       matrix:
@@ -57,15 +59,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
           run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
@@ -89,7 +93,7 @@ jobs:
       #     sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
       - name: Build Tauri app
-        run: pnpm tauri build --target ${{ matrix.target }}
+        run: pnpm tauri build --target ${{ matrix.target }} --bundles dmg,app
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -97,149 +101,54 @@ jobs:
       - name: Upload release assets (macOS)
         if: matrix.platform == 'macos-latest'
         run: |
-          # DMG installer
           DMG_PATH=$(find src-tauri/target/${{ matrix.target }}/release/bundle/dmg -name "*.dmg" | head -n 1)
-          if [ -f "$DMG_PATH" ]; then
-            gh release upload ${{ github.ref_name }} "$DMG_PATH" --clobber
+          if [ -z "$DMG_PATH" ] || [ ! -f "$DMG_PATH" ]; then
+            echo "❌ Error: DMG installer not found"
+            exit 1
           fi
+
+          TARBALL=$(find src-tauri/target/${{ matrix.target }}/release/bundle/macos -name "*.app.tar.gz" ! -name "*.sig" | head -n 1)
+          if [ -z "$TARBALL" ] || [ ! -f "$TARBALL" ]; then
+            echo "❌ Error: Updater tarball not found"
+            exit 1
+          fi
+
+          SIG_SOURCE="${TARBALL}.sig"
+          if [ ! -f "$SIG_SOURCE" ]; then
+            echo "❌ Error: Updater signature not found at $SIG_SOURCE"
+            exit 1
+          fi
+
+          # DMG installer
+          gh release upload ${{ github.ref_name }} "$DMG_PATH" --clobber
 
           # App bundle (tarball) for updater
           # Tauri 2.x automatically generates .app.tar.gz and .sig for updater when signing is enabled
-          TARBALL=$(find src-tauri/target/${{ matrix.target }}/release/bundle/macos -name "*.app.tar.gz" ! -name "*.sig" | head -n 1)
+          cp "$TARBALL" "fanyifanyi_${{ matrix.arch }}.app.tar.gz"
+          gh release upload ${{ github.ref_name }} "fanyifanyi_${{ matrix.arch }}.app.tar.gz" --clobber
+          echo "✓ Uploaded tarball"
 
-          if [ -f "$TARBALL" ]; then
-            echo "Found updater tarball: $TARBALL"
+          cp "$SIG_SOURCE" "fanyifanyi_${{ matrix.arch }}.app.tar.gz.sig"
+          gh release upload ${{ github.ref_name }} "fanyifanyi_${{ matrix.arch }}.app.tar.gz.sig" --clobber
+          echo "✓ Uploaded signature file"
 
-            # Copy and rename tarball
-            cp "$TARBALL" "fanyifanyi_${{ matrix.arch }}.app.tar.gz"
-            gh release upload ${{ github.ref_name }} "fanyifanyi_${{ matrix.arch }}.app.tar.gz" --clobber
-            echo "✓ Uploaded tarball"
-
-            # Look for signature file (should be next to the tarball)
-            SIG_SOURCE="${TARBALL}.sig"
-            if [ -f "$SIG_SOURCE" ]; then
-              cp "$SIG_SOURCE" "fanyifanyi_${{ matrix.arch }}.app.tar.gz.sig"
-              gh release upload ${{ github.ref_name }} "fanyifanyi_${{ matrix.arch }}.app.tar.gz.sig" --clobber
-              echo "✓ Uploaded signature file"
-            else
-              echo "⚠️ Warning: Signature file not found at $SIG_SOURCE"
-              echo "Bundle directory contents:"
-              ls -lah "$(dirname "$TARBALL")" || true
-              echo "All .sig files in target directory:"
-              find src-tauri/target/${{ matrix.target }}/release -name "*.sig" || echo "No .sig files found"
-            fi
-          else
-            echo "⚠️ Warning: No updater tarball found, falling back to manual creation"
-            # Fallback: create tarball manually from .app bundle
-            APP_PATH=$(find src-tauri/target/${{ matrix.target }}/release/bundle/macos -name "*.app" | head -n 1)
-            if [ -d "$APP_PATH" ]; then
-              tar czf "fanyifanyi_${{ matrix.arch }}.app.tar.gz" -C "$(dirname "$APP_PATH")" "$(basename "$APP_PATH")"
-              gh release upload ${{ github.ref_name }} "fanyifanyi_${{ matrix.arch }}.app.tar.gz" --clobber
-              echo "✓ Created and uploaded tarball manually"
-              echo "⚠️ Note: Manual tarball will not have a signature file"
-            fi
-          fi
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # - name: Upload release assets (Linux)
-      #   if: matrix.platform == 'ubuntu-22.04'
-      #   run: |
-      #     # AppImage
-      #     APPIMAGE_PATH=$(find src-tauri/target/${{ matrix.target }}/release/bundle/appimage -name "*.AppImage" | grep -v "\.AppImage\." | head -n 1)
-      #     if [ -f "$APPIMAGE_PATH" ]; then
-      #       gh release upload ${{ github.ref_name }} "$APPIMAGE_PATH" --clobber
-      #
-      #       # Updater files
-      #       SIG_FILE="${APPIMAGE_PATH}.sig"
-      #       if [ -f "$SIG_FILE" ]; then
-      #         gh release upload ${{ github.ref_name }} "$SIG_FILE" --clobber
-      #       fi
-      #     fi
-      #
-      #     # Deb package
-      #     DEB_PATH=$(find src-tauri/target/${{ matrix.target }}/release/bundle/deb -name "*.deb" | head -n 1)
-      #     if [ -f "$DEB_PATH" ]; then
-      #       gh release upload ${{ github.ref_name }} "$DEB_PATH" --clobber
-      #     fi
-      #   env:
-      #     GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # - name: Upload release assets (Windows)
-      #   if: matrix.platform == 'windows-latest'
-      #   run: |
-      #     # MSI installer
-      #     $MSI_PATH = Get-ChildItem -Path "src-tauri/target/${{ matrix.target }}/release/bundle/msi" -Filter "*.msi" | Select-Object -First 1 -ExpandProperty FullName
-      #     if (Test-Path $MSI_PATH) {
-      #       gh release upload ${{ github.ref_name }} $MSI_PATH --clobber
-      #
-      #       # Updater files
-      #       $SIG_FILE = "$MSI_PATH.sig"
-      #       if (Test-Path $SIG_FILE) {
-      #         gh release upload ${{ github.ref_name }} $SIG_FILE --clobber
-      #       }
-      #     }
-      #
-      #     # NSIS installer
-      #     $NSIS_PATH = Get-ChildItem -Path "src-tauri/target/${{ matrix.target }}/release/bundle/nsis" -Filter "*.exe" | Select-Object -First 1 -ExpandProperty FullName
-      #     if (Test-Path $NSIS_PATH) {
-      #       gh release upload ${{ github.ref_name }} $NSIS_PATH --clobber
-      #     }
-      #   env:
-      #     GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      #   shell: pwsh
-
-  generate-updater-json:
-    needs: build-tauri
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Setup git-cliff
-        uses: kenji-miyake/setup-git-cliff@v2
-
-      - name: Extract version from tag
-        id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
-
-      - name: Download release assets
-        run: gh release download ${{ github.ref_name }} --dir ./release-assets
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Generate release notes for updater
+      - name: Collect release notes for updater
+        if: matrix.platform == 'macos-latest'
         run: |
-          git-cliff --tag ${{ github.ref_name }} --strip all > release-assets/notes.md
+          gh release view ${{ github.ref_name }} --json body --jq '.body' > release-notes.md
 
       - name: Generate unified latest.json
+        if: matrix.platform == 'macos-latest'
         run: |
-          cd release-assets
-
-          # Build platforms object
-          PLATFORMS="{}"
-
-          # macOS aarch64
-          if [ -f "fanyifanyi_aarch64.app.tar.gz" ]; then
-            SIG_CONTENT=""
-            if [ -f "fanyifanyi_aarch64.app.tar.gz.sig" ]; then
-              SIG_CONTENT=$(cat fanyifanyi_aarch64.app.tar.gz.sig)
-            fi
-            PLATFORMS=$(echo "$PLATFORMS" | jq --arg sig "$SIG_CONTENT" \
-              '. + {"darwin-aarch64": {"signature": $sig, "url": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/fanyifanyi_aarch64.app.tar.gz"}}')
-          fi
-
-          # Generate final JSON using jq for proper escaping
+          VERSION="${GITHUB_REF_NAME#v}"
+          SIG_CONTENT=$(cat "fanyifanyi_${{ matrix.arch }}.app.tar.gz.sig")
           jq -n \
-            --arg version "${{ steps.version.outputs.VERSION }}" \
-            --rawfile notes notes.md \
+            --arg version "$VERSION" \
+            --rawfile notes release-notes.md \
             --arg pub_date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            --argjson platforms "$PLATFORMS" \
-            '{version: $version, notes: $notes, pub_date: $pub_date, platforms: $platforms}' > latest.json
+            --arg sig "$SIG_CONTENT" \
+            '{version: $version, notes: $notes, pub_date: $pub_date, platforms: {"darwin-aarch64": {"signature": $sig, "url": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/fanyifanyi_aarch64.app.tar.gz"}}}' > latest.json
 
-          # Upload latest.json to both current release and latest release
           gh release upload ${{ github.ref_name }} latest.json --clobber
           gh release upload latest latest.json --clobber || true
         env:
