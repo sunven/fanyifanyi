@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.30] - 2026-05-07
+
+### Features
+
+- Add copy button for translation results
+- **updater**: Refactor updater JSON format to comply with Tauri v2 specifications
+- Add ultragoal, ultraqa, ultrawork, visual-ralph, wiki, and worker skills
+- **release**: Enhance release workflow with improved error handling and asset uploads
+
 ## [0.1.29] - 2026-04-29
 
 ### Features
