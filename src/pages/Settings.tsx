@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { NonMacOnly, TitleBarSpacer, WindowTitleBar } from '@/components/WindowTitleBar'
 import { getCurrentVersion, useUpdate } from '@/contexts/UpdateContext'
+import { testAIConfig } from '@/lib/ai'
 import {
   addAIConfig,
   deleteAIConfig,
@@ -31,6 +32,31 @@ interface SettingsProps {
   initialSection?: 'updates'
 }
 
+interface ModelTestResult {
+  type: 'success' | 'error'
+  message: string
+}
+
+const CONNECTION_ERROR_MESSAGE = '连接失败：无法访问 API Base URL。请检查地址、网络、代理设置，或服务商是否允许当前环境访问。'
+
+function getModelTestErrorMessage(error: unknown) {
+  if (error instanceof DOMException && error.name === 'AbortError') {
+    return '测试超时，请检查网络连接或 API Base URL'
+  }
+  const message = typeof error === 'string'
+    ? error
+    : error instanceof Error
+      ? error.message
+      : ''
+  if (message.includes('Connection error')) {
+    return CONNECTION_ERROR_MESSAGE
+  }
+  if (message) {
+    return message
+  }
+  return '测试失败，请检查 API Key、模型标识和网络连接'
+}
+
 export default function Settings({ onBack, initialSection }: SettingsProps) {
   const [configs, setConfigs] = useState(() => getAllAIConfigs())
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -40,6 +66,8 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
   const [saveError, setSaveError] = useState('')
   const [showSaveAlert, setShowSaveAlert] = useState(false)
   const [showNewApiKey, setShowNewApiKey] = useState(false)
+  const [testingModelId, setTestingModelId] = useState<string | null>(null)
+  const [modelTestResults, setModelTestResults] = useState<Record<string, ModelTestResult>>({})
   const [appVersion, setAppVersion] = useState<string>('加载中...')
   const updateSectionRef = useRef<HTMLDivElement>(null)
 
@@ -125,6 +153,46 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
     setShowAddDialog(open)
     if (!open) {
       setShowNewApiKey(false)
+    }
+  }
+
+  const handleTestModel = async (model: AIConfig) => {
+    if (testingModelId) {
+      return
+    }
+
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), 15000)
+
+    setTestingModelId(model.id)
+    setModelTestResults(prev => {
+      const next = { ...prev }
+      delete next[model.id]
+      return next
+    })
+
+    try {
+      await testAIConfig(model, controller.signal)
+      setModelTestResults(prev => ({
+        ...prev,
+        [model.id]: {
+          type: 'success',
+          message: '测试通过',
+        },
+      }))
+    }
+    catch (error) {
+      setModelTestResults(prev => ({
+        ...prev,
+        [model.id]: {
+          type: 'error',
+          message: getModelTestErrorMessage(error),
+        },
+      }))
+    }
+    finally {
+      window.clearTimeout(timeout)
+      setTestingModelId(null)
     }
   }
 
@@ -222,6 +290,10 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
                 onSave={handleSaveEdit}
                 onCancel={handleCancelEdit}
                 onDelete={() => setShowDeleteConfirm(model.id)}
+                onTest={handleTestModel}
+                isTesting={testingModelId === model.id}
+                isTestDisabled={testingModelId !== null}
+                testResult={modelTestResults[model.id]}
               />
             ))}
           </div>
@@ -508,6 +580,10 @@ interface ModelCardProps {
   onSave: (id: string, updates: Partial<Omit<AIConfig, 'id'>>) => void
   onCancel: () => void
   onDelete: () => void
+  onTest: (model: AIConfig) => void
+  isTesting: boolean
+  isTestDisabled: boolean
+  testResult?: ModelTestResult
 }
 
 function ModelCard({
@@ -519,6 +595,10 @@ function ModelCard({
   onSave,
   onCancel,
   onDelete,
+  onTest,
+  isTesting,
+  isTestDisabled,
+  testResult,
 }: ModelCardProps) {
   const [editForm, setEditForm] = useState(model)
   const [showApiKey, setShowApiKey] = useState(false)
@@ -616,7 +696,7 @@ function ModelCard({
         : (
             <div>
               <div className="flex items-start justify-between">
-                <div className="flex-1">
+                <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 mb-2">
                     <h3 className="text-lg font-semibold">{model.name}</h3>
                     {isActive && (
@@ -638,8 +718,8 @@ function ModelCard({
                       <span className="font-medium">Key:</span>
                       {model.apiKey
                         ? (
-                            <>
-                              <span className="min-w-0 flex-1 break-all">
+                            <span className="inline-flex max-w-full items-center gap-1 align-top">
+                              <span className="min-w-0 break-all">
                                 {showApiKey ? model.apiKey : '••••••••'}
                               </span>
                               <Button
@@ -655,10 +735,22 @@ function ModelCard({
                                   ? <EyeOff className="h-4 w-4" />
                                   : <Eye className="h-4 w-4" />}
                               </Button>
-                            </>
+                            </span>
                           )
                         : <span>未设置</span>}
                     </div>
+                    {testResult && (
+                      <p
+                        className={`pt-1 text-sm ${
+                          testResult.type === 'success'
+                            ? 'text-green-600 dark:text-green-400'
+                            : 'text-red-600 dark:text-red-400'
+                        }`}
+                        role={testResult.type === 'error' ? 'alert' : 'status'}
+                      >
+                        {testResult.message}
+                      </p>
+                    )}
                   </div>
                 </div>
                 <div className="flex flex-col gap-2">
@@ -671,6 +763,14 @@ function ModelCard({
                     </Button>
                   )}
                   <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => onTest(model)}
+                      disabled={isTestDisabled}
+                    >
+                      {isTesting ? '测试中' : '测试'}
+                    </Button>
                     <Button
                       size="sm"
                       variant="outline"

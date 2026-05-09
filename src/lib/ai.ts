@@ -1,6 +1,16 @@
+import { invoke, isTauri } from '@tauri-apps/api/core'
 import OpenAI from 'openai'
+import type { AIConfig } from './config'
 import { getAIConfig } from './config'
 import { logger } from './logger'
+
+function createClient(config: AIConfig) {
+  return new OpenAI({
+    baseURL: config.baseURL,
+    apiKey: config.apiKey,
+    dangerouslyAllowBrowser: true,
+  })
+}
 
 export async function* translateStream(
   text: string,
@@ -8,11 +18,7 @@ export async function* translateStream(
 ): AsyncGenerator<string, void, unknown> {
   const config = getAIConfig()
 
-  const client = new OpenAI({
-    baseURL: config.baseURL,
-    apiKey: config.apiKey,
-    dangerouslyAllowBrowser: true,
-  })
+  const client = createClient(config)
 
   let stream
   try {
@@ -58,5 +64,64 @@ ${text}
     if (content) {
       yield content
     }
+  }
+}
+
+export async function testAIConfig(config: AIConfig, signal?: AbortSignal): Promise<void> {
+  if (!config.baseURL.trim()) {
+    throw new Error('请填写 API Base URL')
+  }
+  if (!config.model.trim()) {
+    throw new Error('请填写模型标识')
+  }
+  if (!config.apiKey.trim()) {
+    throw new Error('请先填写 API Key')
+  }
+
+  if (signal?.aborted) {
+    throw new DOMException('测试已取消', 'AbortError')
+  }
+
+  if (isTauri()) {
+    try {
+      await invoke('test_ai_config', {
+        baseUrl: config.baseURL,
+        apiKey: config.apiKey,
+        model: config.model,
+      })
+    }
+    catch (err) {
+      logger.error('AI 模型测试失败', err)
+      if (typeof err === 'string') {
+        throw new Error(err)
+      }
+      throw err
+    }
+    return
+  }
+
+  const client = createClient(config)
+
+  try {
+    await client.chat.completions.create(
+      {
+        model: config.model,
+        max_tokens: 8,
+        temperature: 0,
+        messages: [
+          {
+            role: 'user',
+            content: 'Reply with OK.',
+          },
+        ],
+      },
+      {
+        signal,
+      },
+    )
+  }
+  catch (err) {
+    logger.error('AI 模型测试失败', err)
+    throw err
   }
 }
