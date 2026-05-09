@@ -6,6 +6,7 @@ import TranslateDisplay from '@/components/translate-display'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
+import { TitleBarSpacer, WindowTitleBar } from '@/components/WindowTitleBar'
 import Settings from './Settings'
 
 export default function TranslationApp() {
@@ -17,24 +18,27 @@ export default function TranslationApp() {
   }
 
   return (
-    <div className="flex flex-col h-screen p-4">
+    <div className="flex flex-col h-screen">
+      <WindowTitleBar title="fanyifanyi">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setShowSettings(true)}
+          className="h-7 px-2 text-xs"
+        >
+          <SettingsIcon className="h-4 w-4" />
+          AI 配置
+        </Button>
+      </WindowTitleBar>
+      <TitleBarSpacer />
       <Tabs defaultValue="translate" className="flex flex-col h-full">
-        <div className="flex justify-between items-center mb-2">
-          <div className="w-[88px]"></div>
+        <div className="flex justify-center items-center p-1">
           <TabsList>
             <TabsTrigger value="translate">翻译</TabsTrigger>
             <TabsTrigger value="dict">词典</TabsTrigger>
           </TabsList>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowSettings(true)}
-          >
-            <SettingsIcon className="h-4 w-4 mr-1" />
-            AI 配置
-          </Button>
         </div>
-        <div className="flex gap-2 flex-1 overflow-hidden">
+        <div className="flex gap-2 flex-1 overflow-hidden px-4 pb-4">
           <div className="w-[350px] flex flex-col space-y-2">
             <div className="flex justify-between items-center">
               <label className="text-sm font-medium">源文本</label>

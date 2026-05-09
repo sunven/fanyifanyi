@@ -15,6 +15,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { NonMacOnly, TitleBarSpacer, WindowTitleBar } from '@/components/WindowTitleBar'
 import { getCurrentVersion, useUpdate } from '@/contexts/UpdateContext'
 import {
   addAIConfig,
@@ -160,24 +161,27 @@ export default function Settings({ onBack }: SettingsProps) {
   }
 
   return (
-    <div className="p-4 max-w-4xl mx-auto">
-      <div className="sticky top-0 z-10 bg-background flex items-center justify-between mb-6 py-2 -mx-4 px-4 border-b">
-        <div className="flex items-center gap-2">
-          {onBack && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onBack}
-              className="mr-2"
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-          )}
-          <h1 className="text-2xl font-bold">设置</h1>
-        </div>
-      </div>
+    <div className="min-h-screen">
+      <WindowTitleBar title="设置">
+        {onBack && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onBack}
+            className="h-7 px-2 text-xs"
+            aria-label="返回"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            返回
+          </Button>
+        )}
+      </WindowTitleBar>
+      <TitleBarSpacer />
 
-      <div className="space-y-6">
+      <div className="p-4 max-w-4xl mx-auto space-y-6">
+        <NonMacOnly>
+          <h1 className="text-2xl font-bold">设置</h1>
+        </NonMacOnly>
         {/* AI Model Configuration Section */}
         <Card className="p-6">
           <div className="flex items-center justify-between mb-4">
