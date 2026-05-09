@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.31] - 2026-05-09
+
+### Features
+
+- Add .omx directory to .gitignore
+
 ## [0.1.30] - 2026-05-07
 
 ### Features
