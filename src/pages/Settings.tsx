@@ -1,6 +1,6 @@
 import type { AIConfig } from '@/lib/config'
 import { ArrowLeft, Eye, EyeOff, RefreshCw } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
 import {
   AlertDialog,
@@ -28,9 +28,10 @@ import {
 
 interface SettingsProps {
   onBack?: () => void
+  initialSection?: 'updates'
 }
 
-export default function Settings({ onBack }: SettingsProps) {
+export default function Settings({ onBack, initialSection }: SettingsProps) {
   const [configs, setConfigs] = useState(() => getAllAIConfigs())
   const [editingId, setEditingId] = useState<string | null>(null)
   const [showAddDialog, setShowAddDialog] = useState(false)
@@ -40,6 +41,7 @@ export default function Settings({ onBack }: SettingsProps) {
   const [showSaveAlert, setShowSaveAlert] = useState(false)
   const [showNewApiKey, setShowNewApiKey] = useState(false)
   const [appVersion, setAppVersion] = useState<string>('加载中...')
+  const updateSectionRef = useRef<HTMLDivElement>(null)
 
   // Update state
   const { hasUpdate, updateInfo, isChecking, isDownloading, checkUpdate, dismissUpdate, downloadAndInstall, retryDownload, error, isDevMode } = useUpdate()
@@ -50,6 +52,12 @@ export default function Settings({ onBack }: SettingsProps) {
       setAppVersion('未知版本')
     })
   }, [])
+
+  useEffect(() => {
+    if (initialSection === 'updates') {
+      updateSectionRef.current?.scrollIntoView({ block: 'start' })
+    }
+  }, [initialSection])
 
   // New model form state
   const [newModel, setNewModel] = useState<Omit<AIConfig, 'id'>>({
@@ -242,7 +250,7 @@ export default function Settings({ onBack }: SettingsProps) {
             </div>
 
             {/* Update */}
-            <div className="space-y-4">
+            <div ref={updateSectionRef} id="settings-updates" className="space-y-4 scroll-mt-20">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1">
                   <h3 className="text-sm font-medium text-muted-foreground mb-1">软件更新</h3>

@@ -48,5 +48,6 @@ export default defineConfig(async () => ({
     globals: true,
     environment: 'happy-dom',
     setupFiles: './src/test/setup.ts',
+    include: ['src/**/*.{test,spec}.{js,ts,jsx,tsx}'],
   },
 }))

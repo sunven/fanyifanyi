@@ -36,3 +36,4 @@ dist-ssr
 .codex/skills/.system/**
 !.codex/prompts/
 !.codex/prompts/**
+.omx/
