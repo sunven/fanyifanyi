@@ -34,6 +34,10 @@ export const DEFAULT_CONFIG: AIConfigs = {
   activeModelId: 'default-1',
 }
 
+function modelApiKeyStorageKey(modelId: string): string {
+  return `${MODEL_SECRET_PREFIX}${modelId}:apiKey`
+}
+
 function cloneConfig(config: AIConfigs): AIConfigs {
   return {
     activeModelId: config.activeModelId,
@@ -125,13 +129,27 @@ function writeMetadata(configs: AIConfigs): void {
 
 async function writeSecrets(configs: AIConfigs): Promise<void> {
   await Promise.all(configs.models.map(async model => {
-    const key = `${MODEL_SECRET_PREFIX}${model.id}:apiKey`
+    const key = modelApiKeyStorageKey(model.id)
     if (model.apiKey) {
       await secureStorageSet(key, model.apiKey)
       return
     }
     await secureStorageRemove(key)
   }))
+}
+
+async function removeSecretsForRemovedModels(
+  previousMetadata: StoredConfigMetadata | null,
+  nextConfigs: AIConfigs,
+): Promise<void> {
+  if (!previousMetadata) {
+    return
+  }
+
+  const nextModelIds = new Set(nextConfigs.models.map(model => model.id))
+  await Promise.all(previousMetadata.models
+    .filter(model => !nextModelIds.has(model.id))
+    .map(model => secureStorageRemove(modelApiKeyStorageKey(model.id))))
 }
 
 async function hydrateConfig(metadata: StoredConfigMetadata): Promise<AIConfigs> {
@@ -141,7 +159,7 @@ async function hydrateConfig(metadata: StoredConfigMetadata): Promise<AIConfigs>
     baseURL: model.baseURL,
     model: model.model,
     apiKey: model.hasApiKey
-      ? (await secureStorageGet(`${MODEL_SECRET_PREFIX}${model.id}:apiKey`)) ?? ''
+      ? (await secureStorageGet(modelApiKeyStorageKey(model.id))) ?? ''
       : '',
   })))
 
@@ -185,8 +203,12 @@ export async function saveAllAIConfigsAsync(configs: AIConfigs): Promise<void> {
     throw new Error('AI 配置无效')
   }
 
+  const previousMetadata = readStoredMetadata()
   writeMetadata(sanitized)
-  await writeSecrets(sanitized)
+  await Promise.all([
+    writeSecrets(sanitized),
+    removeSecretsForRemovedModels(previousMetadata, sanitized),
+  ])
 }
 
 export async function addAIConfigAsync(config: Omit<AIConfig, 'id'>): Promise<AIConfig> {
@@ -223,7 +245,7 @@ export async function deleteAIConfigAsync(id: string): Promise<void> {
     configs.activeModelId = configs.models[0].id
   }
   await saveAllAIConfigsAsync(configs)
-  await secureStorageRemove(`${MODEL_SECRET_PREFIX}${id}:apiKey`)
+  await secureStorageRemove(modelApiKeyStorageKey(id))
 }
 
 export async function setActiveModelAsync(id: string): Promise<void> {
@@ -236,7 +258,7 @@ export async function setActiveModelAsync(id: string): Promise<void> {
 
 export async function resetAIConfigAsync(): Promise<AIConfigs> {
   const current = await getAllAIConfigsAsync()
-  await Promise.all(current.models.map(model => secureStorageRemove(`${MODEL_SECRET_PREFIX}${model.id}:apiKey`)))
+  await Promise.all(current.models.map(model => secureStorageRemove(modelApiKeyStorageKey(model.id))))
   try {
     localStorage.removeItem(CONFIG_METADATA_KEY)
     localStorage.removeItem(LEGACY_CONFIG_KEY)

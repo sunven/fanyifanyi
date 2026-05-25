@@ -23,6 +23,10 @@ import type { SyncRow } from '@/lib/sync-service'
 
 type SyncStatus = 'idle' | 'checking' | 'syncing' | 'synced' | 'error'
 
+type RemoteRefreshResult =
+  | { ok: true, currentUser: User | null, row: SyncRow | null }
+  | { ok: false }
+
 interface AccountSyncPanelProps {
   configs: AIConfigs
   onImportConfig: (configs: AIConfigs) => Promise<void>
@@ -54,10 +58,10 @@ export function AccountSyncPanel({ configs, onImportConfig }: AccountSyncPanelPr
     configsRef.current = configs
   }, [configs])
 
-  const refreshRemote = async () => {
+  const refreshRemote = async (): Promise<RemoteRefreshResult> => {
     if (!supabase) {
       setSyncStatus('idle')
-      return
+      return { ok: false }
     }
 
     setSyncStatus('checking')
@@ -67,18 +71,18 @@ export function AccountSyncPanel({ configs, onImportConfig }: AccountSyncPanelPr
       if (!currentUser) {
         setRemoteRow(null)
         setSyncStatus('idle')
-        return
+        return { ok: true, currentUser: null, row: null }
       }
       const row = await fetchRemoteConfig()
       setRemoteRow(row)
       setLastSyncedAt(row?.updated_at ?? null)
       setSyncStatus('idle')
-      return row
+      return { ok: true, currentUser, row }
     }
     catch (error) {
       setErrorMessage(getErrorMessage(error))
       setSyncStatus('error')
-      return null
+      return { ok: false }
     }
   }
 
@@ -119,14 +123,17 @@ export function AccountSyncPanel({ configs, onImportConfig }: AccountSyncPanelPr
     }
 
     syncAfterLoginRef.current = (async () => {
-      const row = await refreshRemote()
-      const currentUser = await getCurrentUser()
-      if (!currentUser) {
+      const result = await refreshRemote()
+      if (!result.ok) {
         setHasResolvedInitialSync(false)
         return
       }
-      if (row?.plaintext) {
-        await syncFromRemote(row)
+      if (!result.currentUser) {
+        setHasResolvedInitialSync(false)
+        return
+      }
+      if (result.row?.plaintext) {
+        await syncFromRemote(result.row)
         return
       }
       await uploadCurrentConfig()
