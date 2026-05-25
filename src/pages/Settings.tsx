@@ -1,7 +1,8 @@
-import type { AIConfig } from '@/lib/config'
+import type { AIConfig, AIConfigs } from '@/lib/config'
 import { ArrowLeft, Eye, EyeOff, RefreshCw } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
+import { AccountSyncPanel } from '@/components/AccountSyncPanel'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,7 +23,9 @@ import {
   addAIConfig,
   deleteAIConfig,
   getAllAIConfigs,
+  loadAIConfigs,
   resetAIConfig,
+  saveAllAIConfigs,
   setActiveModel,
   updateAIConfig,
 } from '@/lib/config'
@@ -69,6 +72,7 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
   const [testingModelId, setTestingModelId] = useState<string | null>(null)
   const [modelTestResults, setModelTestResults] = useState<Record<string, ModelTestResult>>({})
   const [appVersion, setAppVersion] = useState<string>('加载中...')
+  const [isLoadingConfigs, setIsLoadingConfigs] = useState(true)
   const updateSectionRef = useRef<HTMLDivElement>(null)
 
   // Update state
@@ -79,6 +83,31 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
     getCurrentVersion().then(setAppVersion).catch(() => {
       setAppVersion('未知版本')
     })
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    loadAIConfigs()
+      .then(loadedConfigs => {
+        if (!cancelled) {
+          setConfigs(loadedConfigs)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSaveError('读取 AI 配置失败')
+          setShowSaveAlert(true)
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsLoadingConfigs(false)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   useEffect(() => {
@@ -96,9 +125,18 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
   })
 
   // Set active model
-  const handleSetActive = (id: string) => {
-    setActiveModel(id)
-    setConfigs(getAllAIConfigs())
+  const refreshConfigs = async () => {
+    setConfigs(await loadAIConfigs())
+  }
+
+  const handleImportConfig = async (nextConfigs: AIConfigs) => {
+    await saveAllAIConfigs(nextConfigs)
+    await refreshConfigs()
+  }
+
+  const handleSetActive = async (id: string) => {
+    await setActiveModel(id)
+    await refreshConfigs()
   }
 
   // Start editing
@@ -107,10 +145,10 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
   }
 
   // Save edit
-  const handleSaveEdit = (id: string, updates: Partial<Omit<AIConfig, 'id'>>) => {
+  const handleSaveEdit = async (id: string, updates: Partial<Omit<AIConfig, 'id'>>) => {
     try {
-      updateAIConfig(id, updates)
-      setConfigs(getAllAIConfigs())
+      await updateAIConfig(id, updates)
+      await refreshConfigs()
       setEditingId(null)
     }
     catch {
@@ -125,15 +163,15 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
   }
 
   // Add new model
-  const handleAddModel = () => {
+  const handleAddModel = async () => {
     try {
       if (!newModel.name || !newModel.baseURL || !newModel.model) {
         setSaveError('请填写所有必填字段')
         setShowSaveAlert(true)
         return
       }
-      addAIConfig(newModel)
-      setConfigs(getAllAIConfigs())
+      await addAIConfig(newModel)
+      await refreshConfigs()
       setShowAddDialog(false)
       setShowNewApiKey(false)
       setNewModel({
@@ -197,10 +235,10 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
   }
 
   // Delete model
-  const handleDeleteModel = (id: string) => {
+  const handleDeleteModel = async (id: string) => {
     try {
-      deleteAIConfig(id)
-      setConfigs(getAllAIConfigs())
+      await deleteAIConfig(id)
+      await refreshConfigs()
       setShowDeleteConfirm(null)
     }
     catch (error) {
@@ -215,8 +253,8 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
   }
 
   // Confirm reset
-  const confirmReset = () => {
-    const defaultConfigs = resetAIConfig()
+  const confirmReset = async () => {
+    const defaultConfigs = await resetAIConfig()
     setConfigs(defaultConfigs)
     setShowResetConfirm(false)
   }
@@ -258,6 +296,8 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
         <NonMacOnly>
           <h1 className="text-2xl font-bold">设置</h1>
         </NonMacOnly>
+        <AccountSyncPanel configs={configs} onImportConfig={handleImportConfig} />
+
         {/* AI Model Configuration Section */}
         <Card className="p-6">
           <div className="flex items-center justify-between mb-4">
@@ -278,31 +318,35 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
             </div>
           </div>
 
-          <div className="space-y-4">
-            {configs.models.map(model => (
-              <ModelCard
-                key={model.id}
-                model={model}
-                isActive={model.id === configs.activeModelId}
-                isEditing={editingId === model.id}
-                onSetActive={handleSetActive}
-                onEdit={handleEdit}
-                onSave={handleSaveEdit}
-                onCancel={handleCancelEdit}
-                onDelete={() => setShowDeleteConfirm(model.id)}
-                onTest={handleTestModel}
-                isTesting={testingModelId === model.id}
-                isTestDisabled={testingModelId !== null}
-                testResult={modelTestResults[model.id]}
-              />
-            ))}
-          </div>
+          {isLoadingConfigs
+            ? <p className="text-sm text-muted-foreground">正在加载模型配置...</p>
+            : (
+                <div className="space-y-4">
+                  {configs.models.map(model => (
+                    <ModelCard
+                      key={model.id}
+                      model={model}
+                      isActive={model.id === configs.activeModelId}
+                      isEditing={editingId === model.id}
+                      onSetActive={handleSetActive}
+                      onEdit={handleEdit}
+                      onSave={handleSaveEdit}
+                      onCancel={handleCancelEdit}
+                      onDelete={() => setShowDeleteConfirm(model.id)}
+                      onTest={handleTestModel}
+                      isTesting={testingModelId === model.id}
+                      isTestDisabled={testingModelId !== null}
+                      testResult={modelTestResults[model.id]}
+                    />
+                  ))}
+                </div>
+              )}
 
           <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-md">
             <p className="text-sm text-blue-800 dark:text-blue-300">
               <strong>提示：</strong>
               {' '}
-              配置保存在本地浏览器的 localStorage 中，不会上传到服务器。点击模型卡片可切换使用的模型。
+              API Key 会迁移到系统安全存储；登录后会通过 Supabase 自动同步配置。点击模型卡片可切换使用的模型。
             </p>
           </div>
         </Card>

@@ -1,11 +1,55 @@
 use std::time::Duration;
+
+use keyring::{Entry, Error as KeyringError};
 use tauri_plugin_http::reqwest;
 use tauri_plugin_log::{Target, TargetKind};
+
+const KEYRING_SERVICE: &str = "com.fanyifanyi.app";
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
+}
+
+fn ensure_keyring_store() -> Result<(), String> {
+    Ok(())
+}
+
+fn secure_entry(key: &str) -> Result<Entry, String> {
+    if key.trim().is_empty() {
+        return Err("安全存储 key 不能为空".to_string());
+    }
+
+    ensure_keyring_store()?;
+    Entry::new(KEYRING_SERVICE, key).map_err(|error| format!("打开安全存储失败: {:?}", error))
+}
+
+#[tauri::command]
+fn secure_storage_get(key: String) -> Result<Option<String>, String> {
+    let entry = secure_entry(&key)?;
+    match entry.get_password() {
+        Ok(value) => Ok(Some(value)),
+        Err(KeyringError::NoEntry) => Ok(None),
+        Err(error) => Err(format!("读取安全存储失败: {:?}", error)),
+    }
+}
+
+#[tauri::command]
+fn secure_storage_set(key: String, value: String) -> Result<(), String> {
+    let entry = secure_entry(&key)?;
+    entry
+        .set_password(&value)
+        .map_err(|error| format!("写入安全存储失败: {:?}", error))
+}
+
+#[tauri::command]
+fn secure_storage_remove(key: String) -> Result<(), String> {
+    let entry = secure_entry(&key)?;
+    match entry.delete_credential() {
+        Ok(()) | Err(KeyringError::NoEntry) => Ok(()),
+        Err(error) => Err(format!("删除安全存储失败: {:?}", error)),
+    }
 }
 
 #[tauri::command]
@@ -167,6 +211,7 @@ pub fn run() {
                 .level(log::LevelFilter::Info)
                 .build(),
         )
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -174,7 +219,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             get_dict_data,
-            test_ai_config
+            test_ai_config,
+            secure_storage_get,
+            secure_storage_set,
+            secure_storage_remove
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

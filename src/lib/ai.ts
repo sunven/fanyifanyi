@@ -1,7 +1,7 @@
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import OpenAI from 'openai'
 import type { AIConfig } from './config'
-import { getAIConfig } from './config'
+import { getAIConfigLoaded } from './config'
 import { logger } from './logger'
 
 function createClient(config: AIConfig) {
@@ -16,7 +16,7 @@ export async function* translateStream(
   text: string,
   signal?: AbortSignal
 ): AsyncGenerator<string, void, unknown> {
-  const config = getAIConfig()
+  const config = await getAIConfigLoaded()
 
   const client = createClient(config)
 

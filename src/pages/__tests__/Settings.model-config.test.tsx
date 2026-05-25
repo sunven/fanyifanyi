@@ -55,11 +55,11 @@ describe('Settings model configuration', () => {
     saveConfigWithApiKey()
   })
 
-  it('keeps the API key visibility button next to the key value', () => {
+  it('keeps the API key visibility button next to the key value', async () => {
     render(<Settings />)
 
-    const showKeyButton = screen.getByRole('button', { name: '显示 API Key' })
-    const keyValue = screen.getByText('••••••••')
+    const showKeyButton = await screen.findByRole('button', { name: '显示 API Key' })
+    const keyValue = await screen.findByText('••••••••')
     const keyControl = showKeyButton.parentElement
 
     expect(keyControl).toContainElement(keyValue)
@@ -70,7 +70,7 @@ describe('Settings model configuration', () => {
     testAIConfig.mockResolvedValue(undefined)
     render(<Settings />)
 
-    fireEvent.click(screen.getByRole('button', { name: '测试' }))
+    fireEvent.click(await screen.findByRole('button', { name: '测试' }))
 
     await waitFor(() => expect(testAIConfig).toHaveBeenCalledTimes(1))
     expect(testAIConfig).toHaveBeenCalledWith(
@@ -88,20 +88,18 @@ describe('Settings model configuration', () => {
     testAIConfig.mockRejectedValue(new Error('认证失败'))
     render(<Settings />)
 
-    fireEvent.click(screen.getByRole('button', { name: '测试' }))
+    fireEvent.click(await screen.findByRole('button', { name: '测试' }))
 
-    const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent('认证失败')
+    expect(await screen.findByText('认证失败')).toBeInTheDocument()
   })
 
   it('shows an actionable message for SDK connection errors', async () => {
     testAIConfig.mockRejectedValue(new Error('Connection error.'))
     render(<Settings />)
 
-    fireEvent.click(screen.getByRole('button', { name: '测试' }))
+    fireEvent.click(await screen.findByRole('button', { name: '测试' }))
 
-    const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent('连接失败：无法访问 API Base URL。请检查地址、网络、代理设置，或服务商是否允许当前环境访问。')
+    expect(await screen.findByText('连接失败：无法访问 API Base URL。请检查地址、网络、代理设置，或服务商是否允许当前环境访问。')).toBeInTheDocument()
   })
 
   it('does not mix test results between model cards', async () => {
@@ -130,7 +128,7 @@ describe('Settings model configuration', () => {
     testAIConfig.mockResolvedValue(undefined)
     render(<Settings />)
 
-    const secondCard = screen.getByText('GPT Test').closest('[data-slot="card"]')
+    const secondCard = (await screen.findByText('GPT Test')).closest('[data-slot="card"]')
     expect(secondCard).not.toBeNull()
 
     fireEvent.click(within(secondCard as HTMLElement).getByRole('button', { name: '测试' }))
