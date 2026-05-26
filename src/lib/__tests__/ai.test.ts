@@ -1,33 +1,24 @@
-import type { AIConfig } from '../config'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { testAIConfig } from '../ai'
+import { testAIConfig, translateStream } from '../ai'
 
-const { createCompletion, invoke, isTauri, openAIConstructor } = vi.hoisted(() => {
-  const createCompletion = vi.fn()
+const { config, getAIConfigLoaded, invoke } = vi.hoisted(() => {
+  const config = {
+    id: 'model-1',
+    name: 'DeepSeek V3',
+    baseURL: 'https://ark.cn-beijing.volces.com/api/v3',
+    apiKey: 'sk-test-key',
+    model: 'ep-20251028141454-jlhp4',
+  }
 
   return {
-    createCompletion,
+    config,
+    getAIConfigLoaded: vi.fn(() => Promise.resolve(config)),
     invoke: vi.fn(),
-    isTauri: vi.fn(),
-    openAIConstructor: vi.fn(function OpenAIMock() {
-      return {
-      chat: {
-        completions: {
-          create: createCompletion,
-        },
-      },
-      }
-    }),
   }
 })
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke,
-  isTauri,
-}))
-
-vi.mock('openai', () => ({
-  default: openAIConstructor,
 }))
 
 vi.mock('../logger', () => ({
@@ -36,20 +27,18 @@ vi.mock('../logger', () => ({
   },
 }))
 
-const config: AIConfig = {
-  id: 'model-1',
-  name: 'DeepSeek V3',
-  baseURL: 'https://ark.cn-beijing.volces.com/api/v3',
-  apiKey: 'sk-test-key',
-  model: 'ep-20251028141454-jlhp4',
-}
+vi.mock('../config', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../config')>()
+  return {
+    ...original,
+    getAIConfigLoaded,
+  }
+})
 
 describe('testAIConfig', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    isTauri.mockReturnValue(true)
     invoke.mockResolvedValue(undefined)
-    createCompletion.mockResolvedValue({})
   })
 
   it('uses the Tauri command in the desktop app', async () => {
@@ -60,7 +49,6 @@ describe('testAIConfig', () => {
       apiKey: 'sk-test-key',
       model: 'ep-20251028141454-jlhp4',
     })
-    expect(openAIConstructor).not.toHaveBeenCalled()
   })
 
   it('wraps Tauri string errors as Error messages', async () => {
@@ -68,24 +56,37 @@ describe('testAIConfig', () => {
 
     await expect(testAIConfig(config)).rejects.toThrow('认证失败，请检查 API Key')
   })
+})
 
-  it('falls back to the OpenAI SDK outside Tauri', async () => {
-    isTauri.mockReturnValue(false)
+describe('translateStream', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
 
-    await testAIConfig(config)
+  it('uses the Tauri translation command in the desktop app', async () => {
+    invoke.mockResolvedValue('你好！')
 
-    expect(invoke).not.toHaveBeenCalled()
-    expect(openAIConstructor).toHaveBeenCalledWith({
-      baseURL: 'https://ark.cn-beijing.volces.com/api/v3',
+    const chunks = []
+    for await (const chunk of translateStream('Hello!')) {
+      chunks.push(chunk)
+    }
+
+    expect(chunks).toEqual(['你好！'])
+    expect(invoke).toHaveBeenCalledWith('translate_text', {
+      baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
       apiKey: 'sk-test-key',
-      dangerouslyAllowBrowser: true,
+      model: 'ep-20251028141454-jlhp4',
+      text: 'Hello!',
     })
-    expect(createCompletion).toHaveBeenCalledWith(
-      expect.objectContaining({
-        model: 'ep-20251028141454-jlhp4',
-        max_tokens: 8,
-      }),
-      { signal: undefined },
-    )
+  })
+
+  it('wraps Tauri translation string errors as Error messages', async () => {
+    invoke.mockRejectedValue('认证失败，请检查 API Key')
+
+    await expect(async () => {
+      for await (const _chunk of translateStream('Hello!')) {
+        // consume generator
+      }
+    }).rejects.toThrow('认证失败，请检查 API Key')
   })
 })

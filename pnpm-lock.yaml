@@ -53,9 +53,6 @@ importers:
       lucide-react:
         specifier: ^0.488.0
         version: 0.488.0(react@18.3.1)
-      openai:
-        specifier: ^5.2.0
-        version: 5.2.0(zod@3.25.76)
       react:
         specifier: ^18.3.1
         version: 18.3.1
@@ -3983,18 +3980,6 @@ packages:
 
   oniguruma-to-es@4.3.3:
     resolution: {integrity: sha512-rPiZhzC3wXwE59YQMRDodUwwT9FZ9nNBwQQfsd1wfdtlKEyCdRV0avrTcSZ5xlIvGRVPd/cx6ZN45ECmS39xvg==}
-
-  openai@5.2.0:
-    resolution: {integrity: sha512-b+Sf2Yk2eApDkhqHr7C4d5hux9gkHUvyqQ7RrdSfLsjrXkCZpJPqkME0u5Py7RPB28Ozz+RkJZpW7YPTOoChew==}
-    hasBin: true
-    peerDependencies:
-      ws: ^8.18.0
-      zod: ^3.23.8
-    peerDependenciesMeta:
-      ws:
-        optional: true
-      zod:
-        optional: true
 
   optionator@0.9.4:
     resolution: {integrity: sha512-6IpQ7mKUxRcZNLIObR0hz7lxsapSSIYNZJwXPGeF0mTVqGKFIXj1DQcMoT22S3ROcLyY/rz0PWaWZ9ayWmad9g==}
@@ -9271,10 +9256,6 @@ snapshots:
       oniguruma-parser: 0.12.1
       regex: 6.0.1
       regex-recursion: 6.0.2
-
-  openai@5.2.0(zod@3.25.76):
-    optionalDependencies:
-      zod: 3.25.76
 
   optionator@0.9.4:
     dependencies:
