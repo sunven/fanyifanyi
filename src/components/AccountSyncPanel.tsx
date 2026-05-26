@@ -1,4 +1,6 @@
 import type { Session, User } from '@supabase/supabase-js'
+import type { AIConfigs } from '@/lib/config'
+import type { SyncRow } from '@/lib/sync-service'
 import { isTauri } from '@tauri-apps/api/core'
 import { getCurrent, onOpenUrl } from '@tauri-apps/plugin-deep-link'
 import { openUrl } from '@tauri-apps/plugin-opener'
@@ -6,7 +8,6 @@ import { Cloud, LogOut, RefreshCw } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import type { AIConfigs } from '@/lib/config'
 import { getErrorMessage } from '@/lib/error-message'
 import {
   downloadConfig,
@@ -14,18 +15,18 @@ import {
   getCurrentUser,
   handleOAuthCallback,
   hasSupabaseConfig,
+  missingSupabaseConfigMessage,
   signInWithGoogle,
   signOut,
   supabase,
   uploadConfig,
 } from '@/lib/sync-service'
-import type { SyncRow } from '@/lib/sync-service'
 
 type SyncStatus = 'idle' | 'checking' | 'syncing' | 'synced' | 'error'
 
-type RemoteRefreshResult =
-  | { ok: true, currentUser: User | null, row: SyncRow | null }
-  | { ok: false }
+type RemoteRefreshResult
+  = | { ok: true, currentUser: User | null, row: SyncRow | null }
+    | { ok: false }
 
 interface AccountSyncPanelProps {
   configs: AIConfigs
@@ -182,14 +183,14 @@ export function AccountSyncPanel({ configs, onImportConfig }: AccountSyncPanelPr
     }
 
     void getCurrent()
-      .then(urls => {
+      .then((urls) => {
         urls?.forEach(url => void processUrl(url))
       })
       .catch(() => {})
 
-    void onOpenUrl(urls => {
+    void onOpenUrl((urls) => {
       urls.forEach(url => void processUrl(url))
-    }).then(fn => {
+    }).then((fn) => {
       unlisten = fn
     })
 
@@ -262,7 +263,7 @@ export function AccountSyncPanel({ configs, onImportConfig }: AccountSyncPanelPr
     const timer = window.setTimeout(() => {
       setErrorMessage('')
       setSyncStatus('syncing')
-      void uploadCurrentConfig(configs).catch(error => {
+      void uploadCurrentConfig(configs).catch((error) => {
         setErrorMessage(getErrorMessage(error))
         setSyncStatus('error')
       })
@@ -316,7 +317,8 @@ export function AccountSyncPanel({ configs, onImportConfig }: AccountSyncPanelPr
           )}
           {!hasSupabaseConfig && (
             <p className="text-sm text-amber-600 dark:text-amber-400" role="alert">
-              缺少 Supabase 环境变量，请检查 .env.local。
+              {missingSupabaseConfigMessage}
+              。
             </p>
           )}
           {errorMessage && (

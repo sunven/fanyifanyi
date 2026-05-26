@@ -3,9 +3,11 @@ import path from 'node:path'
 import process from 'node:process'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
+import { loadEnv } from 'vite'
 import { defineConfig } from 'vitest/config'
 
 const host = process.env.TAURI_DEV_HOST
+const requiredBuildEnv = ['VITE_SUPABASE_URL', 'VITE_SUPABASE_ANON_KEY'] as const
 
 // Read package.json to get version
 const packageJson = JSON.parse(
@@ -13,41 +15,55 @@ const packageJson = JSON.parse(
 )
 
 // https://vitejs.dev/config/
-export default defineConfig(async () => ({
-  plugins: [react(), tailwindcss()],
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
+export default defineConfig(async ({ command, mode }) => {
+  const env = loadEnv(mode, process.cwd(), '')
+
+  if (command === 'build') {
+    const missingEnv = requiredBuildEnv.filter(name => !(process.env[name] ?? env[name]))
+    if (missingEnv.length > 0) {
+      throw new Error(
+        `Missing required build environment variables: ${missingEnv.join(', ')}. `
+        + 'Set them in .env.local for local builds or GitHub Actions secrets for release builds.',
+      )
+    }
+  }
+
+  return {
+    plugins: [react(), tailwindcss()],
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, './src'),
+      },
     },
-  },
-  define: {
-    'import.meta.env.PACKAGE_VERSION': JSON.stringify(packageJson.version),
-  },
-  // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
-  //
-  // 1. prevent vite from obscuring rust errors
-  clearScreen: false,
-  // 2. tauri expects a fixed port, fail if that port is not available
-  server: {
-    port: 1420,
-    strictPort: true,
-    host: host || false,
-    hmr: host
-      ? {
-          protocol: 'ws',
-          host,
-          port: 1421,
-        }
-      : undefined,
-    watch: {
-      // 3. tell vite to ignore watching `src-tauri`
-      ignored: ['**/src-tauri/**'],
+    define: {
+      'import.meta.env.PACKAGE_VERSION': JSON.stringify(packageJson.version),
     },
-  },
-  test: {
-    globals: true,
-    environment: 'happy-dom',
-    setupFiles: './src/test/setup.ts',
-    include: ['src/**/*.{test,spec}.{js,ts,jsx,tsx}'],
-  },
-}))
+    // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
+    //
+    // 1. prevent vite from obscuring rust errors
+    clearScreen: false,
+    // 2. tauri expects a fixed port, fail if that port is not available
+    server: {
+      port: 1420,
+      strictPort: true,
+      host: host || false,
+      hmr: host
+        ? {
+            protocol: 'ws',
+            host,
+            port: 1421,
+          }
+        : undefined,
+      watch: {
+        // 3. tell vite to ignore watching `src-tauri`
+        ignored: ['**/src-tauri/**'],
+      },
+    },
+    test: {
+      globals: true,
+      environment: 'happy-dom',
+      setupFiles: './src/test/setup.ts',
+      include: ['src/**/*.{test,spec}.{js,ts,jsx,tsx}'],
+    },
+  }
+})

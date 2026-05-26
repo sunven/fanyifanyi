@@ -2,6 +2,10 @@ import type { User } from '@supabase/supabase-js'
 import type { AIConfigs } from './config'
 import { getAuthRedirectUrl, hasSupabaseConfig, supabase } from './supabase'
 
+export const missingSupabaseConfigMessage = import.meta.env.DEV
+  ? '缺少 Supabase 配置，请检查 .env.local'
+  : '缺少 Supabase 构建配置，请检查发布环境变量 VITE_SUPABASE_URL 和 VITE_SUPABASE_ANON_KEY'
+
 export interface SyncRow {
   user_id: string
   schema_version: number
@@ -53,7 +57,7 @@ function validateSyncPayload(payload: SyncPayloadPlaintext): SyncPayloadPlaintex
 
 export async function signInWithGoogle() {
   if (!supabase) {
-    throw new Error('缺少 Supabase 配置，请检查 .env.local')
+    throw new Error(missingSupabaseConfigMessage)
   }
 
   const { data, error } = await supabase.auth.signInWithOAuth({
@@ -75,7 +79,7 @@ export async function signInWithGoogle() {
 
 export async function handleOAuthCallback(url: string) {
   if (!supabase) {
-    throw new Error('缺少 Supabase 配置，请检查 .env.local')
+    throw new Error(missingSupabaseConfigMessage)
   }
 
   const parsed = new URL(url)
@@ -117,7 +121,7 @@ export async function signOut() {
 
 export async function fetchRemoteConfig(): Promise<SyncRow | null> {
   if (!supabase) {
-    throw new Error('缺少 Supabase 配置，请检查 .env.local')
+    throw new Error(missingSupabaseConfigMessage)
   }
 
   const { data, error } = await supabase
@@ -133,7 +137,7 @@ export async function fetchRemoteConfig(): Promise<SyncRow | null> {
 
 export async function uploadConfig(configs: AIConfigs) {
   if (!supabase) {
-    throw new Error('缺少 Supabase 配置，请检查 .env.local')
+    throw new Error(missingSupabaseConfigMessage)
   }
 
   const user = await getCurrentUser()
