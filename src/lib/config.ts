@@ -1,14 +1,17 @@
 import {
   addAIConfigAsync,
-  deleteAIConfigAsync,
   DEFAULT_CONFIG,
+  deleteAIConfigAsync,
   getAIConfigAsync,
   getAllAIConfigsAsync,
   resetAIConfigAsync,
   saveAllAIConfigsAsync,
   setActiveModelAsync,
+  setTranslationProviderAsync,
   updateAIConfigAsync,
 } from './config-repository'
+
+export type TranslationProvider = 'ai' | 'google' | 'microsoft'
 
 export interface AIConfig {
   id: string
@@ -21,17 +24,20 @@ export interface AIConfig {
 export interface AIConfigs {
   models: AIConfig[]
   activeModelId: string
+  translationProvider: TranslationProvider
 }
 
 let configCache: AIConfigs = {
   activeModelId: DEFAULT_CONFIG.activeModelId,
   models: DEFAULT_CONFIG.models.map(model => ({ ...model })),
+  translationProvider: DEFAULT_CONFIG.translationProvider,
 }
 
 function cloneConfig(config: AIConfigs): AIConfigs {
   return {
     activeModelId: config.activeModelId,
     models: config.models.map(model => ({ ...model })),
+    translationProvider: config.translationProvider,
   }
 }
 
@@ -53,6 +59,17 @@ export async function getAIConfigLoaded(): Promise<AIConfig> {
   const config = await getAIConfigAsync()
   configCache = await getAllAIConfigsAsync()
   return config
+}
+
+export async function getTranslationSettingsLoaded(): Promise<{
+  aiConfig: AIConfig
+  provider: TranslationProvider
+}> {
+  configCache = await getAllAIConfigsAsync()
+  return {
+    aiConfig: getAIConfig(),
+    provider: configCache.translationProvider,
+  }
 }
 
 export async function saveAllAIConfigs(configs: AIConfigs): Promise<void> {
@@ -84,11 +101,16 @@ export async function setActiveModel(id: string): Promise<void> {
   configCache = await getAllAIConfigsAsync()
 }
 
+export async function setTranslationProvider(provider: TranslationProvider): Promise<void> {
+  await setTranslationProviderAsync(provider)
+  configCache = await getAllAIConfigsAsync()
+}
+
 export async function resetAIConfig(): Promise<AIConfigs> {
   configCache = await resetAIConfigAsync()
   return cloneConfig(configCache)
 }
 
-void loadAIConfigs().catch(error => {
+void loadAIConfigs().catch((error) => {
   console.error('加载 AI 配置失败:', error)
 })

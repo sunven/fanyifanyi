@@ -5,6 +5,7 @@ use tauri_plugin_http::reqwest;
 use tauri_plugin_log::{Target, TargetKind};
 
 const KEYRING_SERVICE: &str = "com.fanyifanyi.app";
+const MICROSOFT_TRANSLATOR_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36 Edg/124.0";
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -158,6 +159,84 @@ fn translate_prompt(text: &str) -> String {
     )
 }
 
+fn contains_cjk(text: &str) -> bool {
+    text.chars().any(|ch| {
+        matches!(
+            ch as u32,
+            0x3400..=0x4DBF
+                | 0x4E00..=0x9FFF
+                | 0xF900..=0xFAFF
+                | 0x20000..=0x2A6DF
+                | 0x2A700..=0x2B73F
+                | 0x2B740..=0x2B81F
+                | 0x2B820..=0x2CEAF
+        )
+    })
+}
+
+fn google_target_language(text: &str) -> &'static str {
+    if contains_cjk(text) {
+        "en"
+    } else {
+        "zh-CN"
+    }
+}
+
+fn parse_google_translation(response_text: &str) -> Result<String, String> {
+    let json: serde_json::Value = serde_json::from_str(response_text)
+        .map_err(|error| format!("解析 Google 翻译响应失败: {}", error))?;
+
+    let translated_parts = json
+        .get("sentences")
+        .and_then(|value| value.as_array())
+        .ok_or_else(|| "Google 翻译响应缺少 sentences".to_string())?
+        .iter()
+        .filter_map(|item| item.get("trans").and_then(|value| value.as_str()))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>();
+
+    if translated_parts.is_empty() {
+        return Err("Google 翻译响应缺少 sentences[].trans".to_string());
+    }
+
+    Ok(translated_parts.join(" "))
+}
+
+fn parse_microsoft_translation(response_text: &str) -> Result<String, String> {
+    let json: serde_json::Value = serde_json::from_str(response_text)
+        .map_err(|error| format!("解析 Microsoft 翻译响应失败: {}", error))?;
+
+    let translated_parts = json
+        .as_array()
+        .ok_or_else(|| "Microsoft 翻译响应格式无效".to_string())?
+        .iter()
+        .flat_map(|item| {
+            item.get("translations")
+                .and_then(|value| value.as_array())
+                .into_iter()
+                .flatten()
+        })
+        .filter_map(|item| item.get("text").and_then(|value| value.as_str()))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>();
+
+    if translated_parts.is_empty() {
+        return Err("Microsoft 翻译响应缺少 translations[].text".to_string());
+    }
+
+    Ok(translated_parts.join(" "))
+}
+
+fn validate_microsoft_token(token: &str) -> Result<(), String> {
+    if token.split('.').count() == 3 {
+        return Ok(());
+    }
+
+    Err("Microsoft 翻译 token 格式无效".to_string())
+}
+
 fn validate_ai_request_config(
     base_url: String,
     api_key: String,
@@ -307,6 +386,171 @@ async fn translate_text(
     Ok(content.to_string())
 }
 
+#[tauri::command]
+async fn translate_with_google(text: String) -> Result<String, String> {
+    if text.trim().is_empty() {
+        return Ok(String::new());
+    }
+
+    let target_language = google_target_language(&text);
+    let url = format!(
+        "https://translate.googleapis.com/translate_a/single?client=gtx&dt=t&dj=1&ie=UTF-8&sl=auto&tl={}&q={}",
+        target_language,
+        urlencoding::encode(&text)
+    );
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|error| format!("创建 Google 翻译客户端失败: {}", error))?;
+
+    let response = client
+        .get(&url)
+        .header("content-type", "application/json")
+        .send()
+        .await
+        .map_err(|error| {
+            if error.is_timeout() {
+                "Google 翻译超时，请检查网络连接".to_string()
+            } else if error.is_connect() {
+                format!(
+                    "连接 Google 翻译失败，请检查网络或代理设置。原始错误：{}",
+                    error
+                )
+            } else {
+                format!("发送 Google 翻译请求失败: {}", error)
+            }
+        })?;
+
+    let status = response.status();
+    let response_text = response
+        .text()
+        .await
+        .map_err(|error| format!("读取 Google 翻译响应失败: {}", error))?;
+
+    if !status.is_success() {
+        let detail = response_detail(&response_text);
+        if detail.is_empty() {
+            return Err(format!("Google 翻译请求失败（HTTP {}）", status.as_u16()));
+        }
+        return Err(format!(
+            "Google 翻译请求失败（HTTP {}）：{}",
+            status.as_u16(),
+            detail
+        ));
+    }
+
+    parse_google_translation(&response_text)
+}
+
+#[tauri::command]
+async fn translate_with_microsoft(text: String) -> Result<String, String> {
+    if text.trim().is_empty() {
+        return Ok(String::new());
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|error| format!("创建 Microsoft 翻译客户端失败: {}", error))?;
+
+    let auth_response = client
+        .get("https://edge.microsoft.com/translate/auth")
+        .header("user-agent", MICROSOFT_TRANSLATOR_USER_AGENT)
+        .send()
+        .await
+        .map_err(|error| {
+            if error.is_timeout() {
+                "获取 Microsoft 翻译 token 超时，请检查网络连接".to_string()
+            } else if error.is_connect() {
+                format!(
+                    "连接 Microsoft 翻译 token 服务失败，请检查网络或代理设置。原始错误：{}",
+                    error
+                )
+            } else {
+                format!("获取 Microsoft 翻译 token 失败: {}", error)
+            }
+        })?;
+
+    let auth_status = auth_response.status();
+    let token = auth_response
+        .text()
+        .await
+        .map_err(|error| format!("读取 Microsoft 翻译 token 失败: {}", error))?;
+
+    if !auth_status.is_success() {
+        let detail = response_detail(&token);
+        if detail.is_empty() {
+            return Err(format!(
+                "获取 Microsoft 翻译 token 失败（HTTP {}）",
+                auth_status.as_u16()
+            ));
+        }
+        return Err(format!(
+            "获取 Microsoft 翻译 token 失败（HTTP {}）：{}",
+            auth_status.as_u16(),
+            detail
+        ));
+    }
+
+    let token = token.trim();
+    if token.is_empty() {
+        return Err("Microsoft 翻译 token 为空".to_string());
+    }
+    validate_microsoft_token(token)?;
+
+    let target_language = google_target_language(&text);
+    let url = format!(
+        "https://api-edge.cognitive.microsofttranslator.com/translate?api-version=3.0&to={}",
+        target_language
+    );
+    let body = serde_json::json!([{ "Text": text }]).to_string();
+
+    let response = client
+        .post(&url)
+        .bearer_auth(token)
+        .header("content-type", "application/json")
+        .header("user-agent", MICROSOFT_TRANSLATOR_USER_AGENT)
+        .header("ocp-apim-subscription-region", "global")
+        .body(body)
+        .send()
+        .await
+        .map_err(|error| {
+            if error.is_timeout() {
+                "Microsoft 翻译超时，请检查网络连接".to_string()
+            } else if error.is_connect() {
+                format!(
+                    "连接 Microsoft 翻译失败，请检查网络或代理设置。原始错误：{}",
+                    error
+                )
+            } else {
+                format!("发送 Microsoft 翻译请求失败: {}", error)
+            }
+        })?;
+
+    let status = response.status();
+    let response_text = response
+        .text()
+        .await
+        .map_err(|error| format!("读取 Microsoft 翻译响应失败: {}", error))?;
+
+    if !status.is_success() {
+        let detail = response_detail(&response_text);
+        if detail.is_empty() {
+            return Err(format!(
+                "Microsoft 翻译请求失败（HTTP {}）",
+                status.as_u16()
+            ));
+        }
+        return Err(format!(
+            "Microsoft 翻译请求失败（HTTP {}）：{}",
+            status.as_u16(),
+            detail
+        ));
+    }
+
+    parse_microsoft_translation(&response_text)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -331,6 +575,8 @@ pub fn run() {
             greet,
             get_dict_data,
             translate_text,
+            translate_with_google,
+            translate_with_microsoft,
             test_ai_config,
             secure_storage_get,
             secure_storage_set,
@@ -342,7 +588,10 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::normalize_openai_base_url;
+    use super::{
+        google_target_language, normalize_openai_base_url, parse_google_translation,
+        parse_microsoft_translation, validate_microsoft_token,
+    };
 
     #[test]
     fn keeps_provider_base_url_unchanged() {
@@ -362,5 +611,34 @@ mod tests {
             normalize_openai_base_url("https://token.sensenova.cn/v1/chat/completions/"),
             "https://token.sensenova.cn/v1"
         );
+    }
+
+    #[test]
+    fn chooses_google_target_language_for_cjk_input() {
+        assert_eq!(google_target_language("你好"), "en");
+        assert_eq!(google_target_language("Hello"), "zh-CN");
+    }
+
+    #[test]
+    fn parses_google_translation_sentences() {
+        let response = r#"{"sentences":[{"trans":"你好！"},{"trans":"世界。"}],"src":"en"}"#;
+
+        assert_eq!(parse_google_translation(response).unwrap(), "你好！ 世界。");
+    }
+
+    #[test]
+    fn parses_microsoft_translation_texts() {
+        let response = r#"[{"translations":[{"text":"你好！"},{"text":"世界。"}],"detectedLanguage":{"language":"en"}}]"#;
+
+        assert_eq!(
+            parse_microsoft_translation(response).unwrap(),
+            "你好！ 世界。"
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_microsoft_tokens() {
+        assert!(validate_microsoft_token("Client Browser Version not supported").is_err());
+        assert!(validate_microsoft_token("header.payload.signature").is_ok());
     }
 }

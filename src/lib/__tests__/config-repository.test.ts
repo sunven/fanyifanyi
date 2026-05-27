@@ -5,6 +5,7 @@ describe('config repository', () => {
   it('removes secure API keys for models removed by a replacement save', async () => {
     await saveAllAIConfigsAsync({
       activeModelId: 'model-1',
+      translationProvider: 'ai',
       models: [
         {
           id: 'model-1',
@@ -27,6 +28,7 @@ describe('config repository', () => {
 
     await saveAllAIConfigsAsync({
       activeModelId: 'model-1',
+      translationProvider: 'ai',
       models: [
         {
           id: 'model-1',
@@ -47,5 +49,43 @@ describe('config repository', () => {
       id: 'model-1',
       apiKey: 'sk-one',
     })
+  })
+
+  it('preserves the selected translation provider in metadata', async () => {
+    await saveAllAIConfigsAsync({
+      activeModelId: 'model-1',
+      translationProvider: 'google',
+      models: [
+        {
+          id: 'model-1',
+          name: 'Model One',
+          baseURL: 'https://example.com/v1',
+          apiKey: '',
+          model: 'one',
+        },
+      ],
+    })
+
+    const reloaded = await getAllAIConfigsAsync()
+    expect(reloaded.translationProvider).toBe('google')
+  })
+
+  it('preserves Microsoft as a selected translation provider', async () => {
+    await saveAllAIConfigsAsync({
+      activeModelId: 'model-1',
+      translationProvider: 'microsoft',
+      models: [
+        {
+          id: 'model-1',
+          name: 'Model One',
+          baseURL: 'https://example.com/v1',
+          apiKey: '',
+          model: 'one',
+        },
+      ],
+    })
+
+    const reloaded = await getAllAIConfigsAsync()
+    expect(reloaded.translationProvider).toBe('microsoft')
   })
 })

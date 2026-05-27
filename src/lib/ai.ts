@@ -1,6 +1,6 @@
 import type { AIConfig } from './config'
 import { invoke } from '@tauri-apps/api/core'
-import { getAIConfigLoaded } from './config'
+import { getTranslationSettingsLoaded } from './config'
 import { logger } from './logger'
 
 function isAbortError(err: unknown) {
@@ -11,19 +11,24 @@ export async function* translateStream(
   text: string,
   signal?: AbortSignal,
 ): AsyncGenerator<string, void, unknown> {
-  const config = await getAIConfigLoaded()
+  const { aiConfig, provider } = await getTranslationSettingsLoaded()
 
   if (signal?.aborted) {
     return
   }
 
   try {
-    const content = await invoke<string>('translate_text', {
-      baseUrl: config.baseURL,
-      apiKey: config.apiKey,
-      model: config.model,
-      text,
-    })
+    const content = provider === 'ai'
+      ? await invoke<string>('translate_text', {
+          baseUrl: aiConfig.baseURL,
+          apiKey: aiConfig.apiKey,
+          model: aiConfig.model,
+          text,
+        })
+      : await invoke<string>(
+          provider === 'google' ? 'translate_with_google' : 'translate_with_microsoft',
+          { text },
+        )
     if (!signal?.aborted && content) {
       yield content
     }

@@ -1,4 +1,4 @@
-import type { AIConfig, AIConfigs } from '@/lib/config'
+import type { AIConfig, AIConfigs, TranslationProvider } from '@/lib/config'
 import { ArrowLeft, Eye, EyeOff, RefreshCw } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
@@ -16,6 +16,13 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { NonMacOnly, TitleBarSpacer, WindowTitleBar } from '@/components/WindowTitleBar'
 import { getCurrentVersion, useUpdate } from '@/contexts/UpdateContext'
 import { testAIConfig } from '@/lib/ai'
@@ -27,6 +34,7 @@ import {
   resetAIConfig,
   saveAllAIConfigs,
   setActiveModel,
+  setTranslationProvider,
   updateAIConfig,
 } from '@/lib/config'
 
@@ -88,7 +96,7 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
   useEffect(() => {
     let cancelled = false
     loadAIConfigs()
-      .then(loadedConfigs => {
+      .then((loadedConfigs) => {
         if (!cancelled) {
           setConfigs(loadedConfigs)
         }
@@ -137,6 +145,17 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
   const handleSetActive = async (id: string) => {
     await setActiveModel(id)
     await refreshConfigs()
+  }
+
+  const handleTranslationProviderChange = async (provider: TranslationProvider) => {
+    try {
+      await setTranslationProvider(provider)
+      await refreshConfigs()
+    }
+    catch {
+      setSaveError('保存翻译引擎失败，请重试')
+      setShowSaveAlert(true)
+    }
   }
 
   // Start editing
@@ -203,7 +222,7 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
     const timeout = window.setTimeout(() => controller.abort(), 15000)
 
     setTestingModelId(model.id)
-    setModelTestResults(prev => {
+    setModelTestResults((prev) => {
       const next = { ...prev }
       delete next[model.id]
       return next
@@ -297,6 +316,35 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
           <h1 className="text-2xl font-bold">设置</h1>
         </NonMacOnly>
         <AccountSyncPanel configs={configs} onImportConfig={handleImportConfig} />
+
+        <Card className="p-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div className="space-y-1">
+              <h2 className="text-xl font-bold">翻译引擎</h2>
+              <p className="text-sm text-muted-foreground">
+                选择翻译时使用 AI 模型，或使用 Google 翻译接口。
+              </p>
+            </div>
+            <Select
+              value={configs.translationProvider}
+              onValueChange={value => handleTranslationProviderChange(value as TranslationProvider)}
+            >
+              <SelectTrigger className="w-full md:w-56" aria-label="翻译引擎">
+                <SelectValue placeholder="选择翻译引擎" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ai">AI 翻译</SelectItem>
+                <SelectItem value="google">Google 翻译</SelectItem>
+                <SelectItem value="microsoft">Microsoft 翻译</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {configs.translationProvider !== 'ai' && (
+            <p className="mt-4 text-sm text-muted-foreground">
+              当前使用第三方翻译接口；下方 AI 模型配置会保留，用于切回 AI 翻译时继续使用。
+            </p>
+          )}
+        </Card>
 
         {/* AI Model Configuration Section */}
         <Card className="p-6">

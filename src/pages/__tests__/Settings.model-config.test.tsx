@@ -10,9 +10,8 @@ vi.mock('@/lib/ai', () => ({
   testAIConfig,
 }))
 
-vi.mock('@/contexts/UpdateContext', () => ({
-  getCurrentVersion: () => new Promise<string>(() => {}),
-  useUpdate: () => ({
+vi.mock('@/contexts/UpdateContext', () => {
+  const getMockUpdateContext = () => ({
     hasUpdate: false,
     updateInfo: null,
     updateHandle: null,
@@ -27,14 +26,20 @@ vi.mock('@/contexts/UpdateContext', () => ({
     downloadAndInstall: vi.fn(),
     retryDownload: vi.fn(),
     clearError: vi.fn(),
-  }),
-}))
+  })
+
+  return {
+    getCurrentVersion: () => new Promise<string>(() => {}),
+    useUpdate: getMockUpdateContext,
+  }
+})
 
 function saveConfigWithApiKey() {
   localStorage.setItem(
     'ai_configs',
     JSON.stringify({
       activeModelId: 'model-1',
+      translationProvider: 'ai',
       models: [
         {
           id: 'model-1',
@@ -48,7 +53,7 @@ function saveConfigWithApiKey() {
   )
 }
 
-describe('Settings model configuration', () => {
+describe('settings model configuration', () => {
   beforeEach(() => {
     localStorage.clear()
     testAIConfig.mockReset()
@@ -107,6 +112,7 @@ describe('Settings model configuration', () => {
       'ai_configs',
       JSON.stringify({
         activeModelId: 'model-1',
+        translationProvider: 'ai',
         models: [
           {
             id: 'model-1',
@@ -136,5 +142,29 @@ describe('Settings model configuration', () => {
     await waitFor(() => expect(testAIConfig).toHaveBeenCalledTimes(1))
     expect(within(secondCard as HTMLElement).getByRole('status')).toHaveTextContent('测试通过')
     expect(screen.getAllByText('测试通过')).toHaveLength(1)
+  })
+
+  it('switches the translation provider to Google', async () => {
+    render(<Settings />)
+
+    fireEvent.click(await screen.findByRole('combobox', { name: '翻译引擎' }))
+    fireEvent.click(await screen.findByRole('option', { name: 'Google 翻译' }))
+
+    expect(await screen.findByText('当前使用第三方翻译接口；下方 AI 模型配置会保留，用于切回 AI 翻译时继续使用。')).toBeInTheDocument()
+
+    const stored = JSON.parse(localStorage.getItem('ai_config_metadata_v1') ?? '{}')
+    expect(stored.translationProvider).toBe('google')
+  })
+
+  it('switches the translation provider to Microsoft', async () => {
+    render(<Settings />)
+
+    fireEvent.click(await screen.findByRole('combobox', { name: '翻译引擎' }))
+    fireEvent.click(await screen.findByRole('option', { name: 'Microsoft 翻译' }))
+
+    expect(await screen.findByText('当前使用第三方翻译接口；下方 AI 模型配置会保留，用于切回 AI 翻译时继续使用。')).toBeInTheDocument()
+
+    const stored = JSON.parse(localStorage.getItem('ai_config_metadata_v1') ?? '{}')
+    expect(stored.translationProvider).toBe('microsoft')
   })
 })

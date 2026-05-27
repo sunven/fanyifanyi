@@ -45,7 +45,7 @@ vi.mock('@/lib/sync-service', () => ({
   uploadConfig,
 }))
 
-describe('AccountSyncPanel', () => {
+describe('account sync panel', () => {
   beforeEach(() => {
     fetchRemoteConfig.mockReset()
     getCurrentUser.mockReset()
@@ -73,6 +73,7 @@ describe('AccountSyncPanel', () => {
       <AccountSyncPanel
         configs={{
           activeModelId: 'model-1',
+          translationProvider: 'ai',
           models: [
             {
               id: 'model-1',

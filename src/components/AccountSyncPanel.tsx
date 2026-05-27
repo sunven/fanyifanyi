@@ -91,10 +91,12 @@ export function AccountSyncPanel({ configs, onImportConfig }: AccountSyncPanelPr
     const payload = downloadConfig(row)
     await onImportConfig({
       activeModelId: payload.activeModelId,
+      translationProvider: payload.translationProvider,
       models: payload.models,
     })
     lastSyncedConfigSignatureRef.current = getConfigSignature({
       activeModelId: payload.activeModelId,
+      translationProvider: payload.translationProvider,
       models: payload.models,
     })
     setHasResolvedInitialSync(true)

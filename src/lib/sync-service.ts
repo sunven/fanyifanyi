@@ -21,6 +21,7 @@ export interface SyncPayloadPlaintext {
   deviceId: string
   updatedAt: string
   activeModelId: string
+  translationProvider: AIConfigs['translationProvider']
   models: AIConfigs['models']
 }
 
@@ -52,7 +53,12 @@ function validateSyncPayload(payload: SyncPayloadPlaintext): SyncPayloadPlaintex
   if (!payload.models.some(model => model.id === payload.activeModelId)) {
     throw new Error('云端配置缺少当前模型')
   }
-  return payload
+  return {
+    ...payload,
+    translationProvider: payload.translationProvider === 'google' || payload.translationProvider === 'microsoft'
+      ? payload.translationProvider
+      : 'ai',
+  }
 }
 
 export async function signInWithGoogle() {
@@ -152,6 +158,7 @@ export async function uploadConfig(configs: AIConfigs) {
     deviceId: getDeviceId(),
     updatedAt,
     activeModelId: configs.activeModelId,
+    translationProvider: configs.translationProvider,
     models: configs.models,
   }
 
