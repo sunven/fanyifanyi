@@ -144,6 +144,77 @@ describe('settings model configuration', () => {
     expect(screen.getAllByText('测试通过')).toHaveLength(1)
   })
 
+  it('tests a new model before saving it', async () => {
+    testAIConfig.mockResolvedValue(undefined)
+    render(<Settings />)
+
+    fireEvent.click(await screen.findByRole('button', { name: '添加模型' }))
+    const dialog = await screen.findByRole('alertdialog')
+
+    fireEvent.change(within(dialog).getByPlaceholderText('GPT-4o Mini'), {
+      target: { value: 'Draft Model' },
+    })
+    fireEvent.change(within(dialog).getByPlaceholderText('https://api.openai.com/v1'), {
+      target: { value: 'https://draft.example.com/v1' },
+    })
+    fireEvent.change(within(dialog).getByPlaceholderText('sk-...'), {
+      target: { value: 'sk-draft-key' },
+    })
+    fireEvent.change(within(dialog).getByPlaceholderText('gpt-4o-mini'), {
+      target: { value: 'draft-model-id' },
+    })
+    fireEvent.click(within(dialog).getByRole('button', { name: '测试' }))
+
+    await waitFor(() => expect(testAIConfig).toHaveBeenCalledTimes(1))
+    expect(testAIConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'new-model-draft',
+        name: 'Draft Model',
+        baseURL: 'https://draft.example.com/v1',
+        apiKey: 'sk-draft-key',
+        model: 'draft-model-id',
+      }),
+      expect.any(AbortSignal),
+    )
+    expect(within(dialog).getByRole('status')).toHaveTextContent('测试通过')
+  })
+
+  it('tests edited model values before saving them', async () => {
+    testAIConfig.mockResolvedValue(undefined)
+    render(<Settings />)
+
+    const card = (await screen.findByText('DeepSeek V3')).closest('[data-slot="card"]')
+    expect(card).not.toBeNull()
+
+    fireEvent.click(within(card as HTMLElement).getByRole('button', { name: '编辑' }))
+    fireEvent.change(within(card as HTMLElement).getByDisplayValue('DeepSeek V3'), {
+      target: { value: 'Edited Model' },
+    })
+    fireEvent.change(within(card as HTMLElement).getByDisplayValue('ep-20251028141454-jlhp4'), {
+      target: { value: 'edited-model-id' },
+    })
+    fireEvent.change(within(card as HTMLElement).getByDisplayValue('https://ark.cn-beijing.volces.com/api/v3'), {
+      target: { value: 'https://edited.example.com/v1' },
+    })
+    fireEvent.change(within(card as HTMLElement).getByDisplayValue('sk-test-key'), {
+      target: { value: 'sk-edited-key' },
+    })
+    fireEvent.click(within(card as HTMLElement).getByRole('button', { name: '测试' }))
+
+    await waitFor(() => expect(testAIConfig).toHaveBeenCalledTimes(1))
+    expect(testAIConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'edit:model-1',
+        name: 'Edited Model',
+        baseURL: 'https://edited.example.com/v1',
+        apiKey: 'sk-edited-key',
+        model: 'edited-model-id',
+      }),
+      expect.any(AbortSignal),
+    )
+    expect(within(card as HTMLElement).getByRole('status')).toHaveTextContent('测试通过')
+  })
+
   it('switches the translation provider to Google', async () => {
     render(<Settings />)
 

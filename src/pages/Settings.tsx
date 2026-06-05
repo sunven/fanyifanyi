@@ -16,6 +16,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -49,7 +50,31 @@ interface ModelTestResult {
   message: string
 }
 
+const NEW_MODEL_TEST_ID = 'new-model-draft'
 const CONNECTION_ERROR_MESSAGE = '连接失败：无法访问 API Base URL。请检查地址、网络、代理设置，或服务商是否允许当前环境访问。'
+
+function getEditModelTestId(id: string) {
+  return `edit:${id}`
+}
+
+function ModelTestMessage({ result }: { result?: ModelTestResult }) {
+  if (!result) {
+    return null
+  }
+
+  return (
+    <p
+      className={`pt-1 text-sm ${
+        result.type === 'success'
+          ? 'text-green-600 dark:text-green-400'
+          : 'text-red-600 dark:text-red-400'
+      }`}
+      role={result.type === 'error' ? 'alert' : 'status'}
+    >
+      {result.message}
+    </p>
+  )
+}
 
 function getModelTestErrorMessage(error: unknown) {
   if (error instanceof DOMException && error.name === 'AbortError') {
@@ -194,6 +219,11 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
       await refreshConfigs()
       setShowAddDialog(false)
       setShowNewApiKey(false)
+      setModelTestResults((prev) => {
+        const next = { ...prev }
+        delete next[NEW_MODEL_TEST_ID]
+        return next
+      })
       setNewModel({
         name: '',
         baseURL: 'https://api.openai.com/v1',
@@ -211,6 +241,11 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
     setShowAddDialog(open)
     if (!open) {
       setShowNewApiKey(false)
+      setModelTestResults((prev) => {
+        const next = { ...prev }
+        delete next[NEW_MODEL_TEST_ID]
+        return next
+      })
     }
   }
 
@@ -252,6 +287,13 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
       window.clearTimeout(timeout)
       setTestingModelId(null)
     }
+  }
+
+  const handleTestNewModel = () => {
+    void handleTestModel({
+      id: NEW_MODEL_TEST_ID,
+      ...newModel,
+    })
   }
 
   // Delete model
@@ -394,6 +436,8 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
                       isTesting={testingModelId === model.id}
                       isTestDisabled={testingModelId !== null}
                       testResult={modelTestResults[model.id]}
+                      isEditTesting={testingModelId === getEditModelTestId(model.id)}
+                      editTestResult={modelTestResults[getEditModelTestId(model.id)]}
                     />
                   ))}
                 </div>
@@ -542,27 +586,38 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>添加新模型</AlertDialogTitle>
-            <AlertDialogDescription>
+            <AlertDialogDescription asChild>
               <div className="space-y-4 mt-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                    模型名称 *
-                  </label>
-                  <input
-                    type="text"
-                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-700"
-                    placeholder="GPT-4o Mini"
-                    value={newModel.name}
-                    onChange={e => setNewModel(prev => ({ ...prev, name: e.target.value }))}
-                  />
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                      模型名称 *
+                    </label>
+                    <Input
+                      type="text"
+                      placeholder="GPT-4o Mini"
+                      value={newModel.name}
+                      onChange={e => setNewModel(prev => ({ ...prev, name: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                      模型标识 *
+                    </label>
+                    <Input
+                      type="text"
+                      placeholder="gpt-4o-mini"
+                      value={newModel.model}
+                      onChange={e => setNewModel(prev => ({ ...prev, model: e.target.value }))}
+                    />
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-gray-900 dark:text-gray-100">
                     API Base URL *
                   </label>
-                  <input
+                  <Input
                     type="text"
-                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-700"
                     placeholder="https://api.openai.com/v1"
                     value={newModel.baseURL}
                     onChange={e => setNewModel(prev => ({ ...prev, baseURL: e.target.value }))}
@@ -573,9 +628,9 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
                     API Key
                   </label>
                   <div className="relative">
-                    <input
+                    <Input
                       type={showNewApiKey ? 'text' : 'password'}
-                      className="w-full px-3 py-2 pr-10 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-700"
+                      className="pr-10"
                       placeholder="sk-..."
                       value={newModel.apiKey}
                       onChange={e => setNewModel(prev => ({ ...prev, apiKey: e.target.value }))}
@@ -595,22 +650,19 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
                     </Button>
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                    模型标识 *
-                  </label>
-                  <input
-                    type="text"
-                    className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-700"
-                    placeholder="gpt-4o-mini"
-                    value={newModel.model}
-                    onChange={e => setNewModel(prev => ({ ...prev, model: e.target.value }))}
-                  />
-                </div>
+                <ModelTestMessage result={modelTestResults[NEW_MODEL_TEST_ID]} />
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleTestNewModel}
+              disabled={testingModelId !== null}
+            >
+              {testingModelId === NEW_MODEL_TEST_ID ? '测试中' : '测试'}
+            </Button>
             <AlertDialogCancel onClick={() => handleAddDialogOpenChange(false)}>取消</AlertDialogCancel>
             <AlertDialogAction onClick={handleAddModel}>
               添加
@@ -689,6 +741,8 @@ interface ModelCardProps {
   isTesting: boolean
   isTestDisabled: boolean
   testResult?: ModelTestResult
+  isEditTesting: boolean
+  editTestResult?: ModelTestResult
 }
 
 function ModelCard({
@@ -704,6 +758,8 @@ function ModelCard({
   isTesting,
   isTestDisabled,
   testResult,
+  isEditTesting,
+  editTestResult,
 }: ModelCardProps) {
   const [editForm, setEditForm] = useState(model)
   const [showApiKey, setShowApiKey] = useState(false)
@@ -728,6 +784,13 @@ function ModelCard({
     onEdit(model.id)
   }
 
+  const handleTestEdit = () => {
+    onTest({
+      ...editForm,
+      id: getEditModelTestId(model.id),
+    })
+  }
+
   return (
     <Card
       className={`p-4 transition-all ${
@@ -737,20 +800,28 @@ function ModelCard({
       {isEditing
         ? (
             <div className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">模型名称</label>
-                <input
-                  type="text"
-                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-700"
-                  value={editForm.name}
-                  onChange={e => setEditForm(prev => ({ ...prev, name: e.target.value }))}
-                />
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">模型名称</label>
+                  <Input
+                    type="text"
+                    value={editForm.name}
+                    onChange={e => setEditForm(prev => ({ ...prev, name: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">模型标识</label>
+                  <Input
+                    type="text"
+                    value={editForm.model}
+                    onChange={e => setEditForm(prev => ({ ...prev, model: e.target.value }))}
+                  />
+                </div>
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">API Base URL</label>
-                <input
+                <Input
                   type="text"
-                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-700"
                   value={editForm.baseURL}
                   onChange={e => setEditForm(prev => ({ ...prev, baseURL: e.target.value }))}
                 />
@@ -758,9 +829,9 @@ function ModelCard({
               <div className="space-y-2">
                 <label className="text-sm font-medium">API Key</label>
                 <div className="relative">
-                  <input
+                  <Input
                     type={showApiKey ? 'text' : 'password'}
-                    className="w-full px-3 py-2 pr-10 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-700"
+                    className="pr-10"
                     value={editForm.apiKey}
                     onChange={e => setEditForm(prev => ({ ...prev, apiKey: e.target.value }))}
                   />
@@ -779,16 +850,16 @@ function ModelCard({
                   </Button>
                 </div>
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">模型标识</label>
-                <input
-                  type="text"
-                  className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-700"
-                  value={editForm.model}
-                  onChange={e => setEditForm(prev => ({ ...prev, model: e.target.value }))}
-                />
-              </div>
+              <ModelTestMessage result={editTestResult} />
               <div className="flex gap-2 pt-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleTestEdit}
+                  disabled={isTestDisabled}
+                >
+                  {isEditTesting ? '测试中' : '测试'}
+                </Button>
                 <Button size="sm" onClick={handleSave}>
                   保存
                 </Button>
@@ -844,18 +915,7 @@ function ModelCard({
                           )
                         : <span>未设置</span>}
                     </div>
-                    {testResult && (
-                      <p
-                        className={`pt-1 text-sm ${
-                          testResult.type === 'success'
-                            ? 'text-green-600 dark:text-green-400'
-                            : 'text-red-600 dark:text-red-400'
-                        }`}
-                        role={testResult.type === 'error' ? 'alert' : 'status'}
-                      >
-                        {testResult.message}
-                      </p>
-                    )}
+                    <ModelTestMessage result={testResult} />
                   </div>
                 </div>
                 <div className="flex flex-col gap-2">
