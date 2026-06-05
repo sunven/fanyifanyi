@@ -58,6 +58,34 @@ describe('window titlebar', () => {
 
     expect(handleMouseDown).not.toHaveBeenCalled()
   })
+
+  it('places titlebar controls on the left by default', () => {
+    setPlatform('MacIntel')
+
+    render(
+      <WindowTitleBar title="fanyifanyi">
+        <button type="button">返回</button>
+      </WindowTitleBar>,
+    )
+
+    const controls = screen.getByTestId('window-titlebar-controls')
+
+    expect(controls.previousElementSibling).toHaveAttribute('aria-hidden', 'true')
+  })
+
+  it('places titlebar controls at the far right when requested', () => {
+    setPlatform('MacIntel')
+
+    render(
+      <WindowTitleBar title="fanyifanyi" controlsPosition="right">
+        <button type="button">AI 配置</button>
+      </WindowTitleBar>,
+    )
+
+    const controls = screen.getByTestId('window-titlebar-controls')
+
+    expect(controls.parentElement?.lastElementChild).toBe(controls)
+  })
 })
 
 describe('titlebar spacer', () => {

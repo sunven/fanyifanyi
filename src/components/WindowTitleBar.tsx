@@ -7,6 +7,7 @@ interface WindowTitleBarProps {
   children?: ReactNode
   title?: string
   className?: string
+  controlsPosition?: 'left' | 'right'
 }
 
 interface NonMacOnlyProps {
@@ -17,7 +18,7 @@ function isMacPlatform() {
   return navigator.platform.toLowerCase().includes('mac')
 }
 
-export function WindowTitleBar({ children, title, className }: WindowTitleBarProps) {
+export function WindowTitleBar({ children, title, className, controlsPosition = 'left' }: WindowTitleBarProps) {
   if (!isMacPlatform()) {
     return null
   }
@@ -29,6 +30,16 @@ export function WindowTitleBar({ children, title, className }: WindowTitleBarPro
 
     await getCurrentWindow().startDragging()
   }
+
+  const controls = (
+    <div
+      data-testid="window-titlebar-controls"
+      className="flex shrink-0 items-center gap-1"
+      onMouseDown={event => event.stopPropagation()}
+    >
+      {children}
+    </div>
+  )
 
   return (
     <div
@@ -46,13 +57,7 @@ export function WindowTitleBar({ children, title, className }: WindowTitleBarPro
           data-tauri-drag-region="true"
           onMouseDown={handleDrag}
         />
-        <div
-          data-testid="window-titlebar-controls"
-          className="flex shrink-0 items-center gap-1"
-          onMouseDown={event => event.stopPropagation()}
-        >
-          {children}
-        </div>
+        {controlsPosition === 'left' && controls}
         <div
           className="pointer-events-none absolute inset-x-28 top-0 h-full min-w-0 select-none truncate text-center text-sm font-semibold leading-10"
           data-tauri-drag-region="true"
@@ -64,6 +69,7 @@ export function WindowTitleBar({ children, title, className }: WindowTitleBarPro
           data-tauri-drag-region="true"
           onMouseDown={handleDrag}
         />
+        {controlsPosition === 'right' && controls}
       </div>
     </div>
   )

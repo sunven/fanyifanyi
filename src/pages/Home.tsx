@@ -51,7 +51,7 @@ export default function TranslationApp() {
 
   return (
     <div className="flex flex-col h-screen">
-      <WindowTitleBar title="fanyifanyi">
+      <WindowTitleBar title="fanyifanyi" controlsPosition="right">
         <Button
           variant="ghost"
           size="sm"
