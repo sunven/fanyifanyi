@@ -1,5 +1,5 @@
 import type { AIConfig, AIConfigs, TranslationProvider } from '@/lib/config'
-import { ArrowLeft, Eye, EyeOff, RefreshCw } from 'lucide-react'
+import { ArrowLeft, Bot, Eye, EyeOff, Info, Languages, RefreshCw } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
 import { AccountSyncPanel } from '@/components/AccountSyncPanel'
@@ -23,6 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Separator } from '@/components/ui/separator'
 import { NonMacOnly, TitleBarSpacer, WindowTitleBar } from '@/components/WindowTitleBar'
 import { getCurrentVersion, useUpdate } from '@/contexts/UpdateContext'
 import { testAIConfig } from '@/lib/ai'
@@ -316,11 +317,15 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
           <h1 className="text-2xl font-bold">设置</h1>
         </NonMacOnly>
         <AccountSyncPanel configs={configs} onImportConfig={handleImportConfig} />
+        <Separator />
 
-        <Card className="p-6">
+        <div className="p-2">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div className="space-y-1">
-              <h2 className="text-xl font-bold">翻译引擎</h2>
+              <div className="flex items-center gap-2">
+                <Languages className="h-5 w-5 text-blue-600" />
+                <h2 className="text-xl font-bold">翻译引擎</h2>
+              </div>
               <p className="text-sm text-muted-foreground">
                 选择翻译时使用 AI 模型，或使用 Google 翻译接口。
               </p>
@@ -344,12 +349,16 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
               当前使用第三方翻译接口；下方 AI 模型配置会保留，用于切回 AI 翻译时继续使用。
             </p>
           )}
-        </Card>
+        </div>
+        <Separator />
 
         {/* AI Model Configuration Section */}
-        <Card className="p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-bold">AI 模型配置</h2>
+        <div className="p-2">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <Bot className="h-5 w-5 text-blue-600" />
+              <h2 className="text-xl font-bold">AI 模型配置</h2>
+            </div>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={handleReset}>
                 重置
@@ -369,7 +378,7 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
           {isLoadingConfigs
             ? <p className="text-sm text-muted-foreground">正在加载模型配置...</p>
             : (
-                <div className="space-y-4">
+                <div className="space-y-2">
                   {configs.models.map(model => (
                     <ModelCard
                       key={model.id}
@@ -390,22 +399,26 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
                 </div>
               )}
 
-          <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-md">
+          <div className="mt-2 p-2 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-md">
             <p className="text-sm text-blue-800 dark:text-blue-300">
               <strong>提示：</strong>
               {' '}
               API Key 会迁移到系统安全存储；登录后会通过 Supabase 自动同步配置。点击模型卡片可切换使用的模型。
             </p>
           </div>
-        </Card>
+        </div>
+        <Separator />
 
         {/* About/Update Section */}
-        <Card className="p-6">
-          <h2 className="text-xl font-bold mb-4">关于</h2>
+        <div className="p-2">
+          <div className="flex items-center gap-2">
+            <Info className="h-5 w-5 text-blue-600" />
+            <h2 className="text-xl font-bold">关于</h2>
+          </div>
 
-          <div className="space-y-6">
+          <div className="space-y-2">
             {/* Version */}
-            <div className="flex items-center justify-between pb-4 border-b">
+            <div className="flex items-center justify-between pb-2">
               <div>
                 <h3 className="text-sm font-medium text-muted-foreground mb-1">当前版本</h3>
                 <p className="text-2xl font-bold">{appVersion}</p>
@@ -414,7 +427,7 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
             </div>
 
             {/* Update */}
-            <div ref={updateSectionRef} id="settings-updates" className="space-y-4 scroll-mt-20">
+            <div ref={updateSectionRef} id="settings-updates" className="space-y-2 scroll-mt-20">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1">
                   <h3 className="text-sm font-medium text-muted-foreground mb-1">软件更新</h3>
@@ -521,7 +534,7 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
               )}
             </div>
           </div>
-        </Card>
+        </div>
       </div>
 
       {/* Add Model Dialog */}

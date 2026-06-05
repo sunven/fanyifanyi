@@ -287,9 +287,9 @@ export function AccountSyncPanel({ configs, onImportConfig }: AccountSyncPanelPr
             : '未登录'
 
   return (
-    <section className="rounded-lg border bg-card p-5 text-card-foreground shadow-sm">
-      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-        <div className="min-w-0 space-y-2">
+    <section className="p-2">
+      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+        <div className="min-w-0 space-y-1">
           <div className="flex items-center gap-2">
             <Cloud className="h-5 w-5 text-blue-600" />
             <h2 className="text-xl font-bold">账号与同步</h2>
