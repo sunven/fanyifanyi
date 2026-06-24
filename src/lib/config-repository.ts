@@ -4,7 +4,7 @@ import { secureStorageGet, secureStorageRemove, secureStorageSet } from './secur
 const LEGACY_CONFIG_KEY = 'ai_configs'
 const CONFIG_METADATA_KEY = 'ai_config_metadata_v1'
 const MODEL_SECRET_PREFIX = 'ai-config:model:'
-const DEFAULT_TRANSLATION_PROVIDER: TranslationProvider = 'ai'
+const DEFAULT_TRANSLATION_PROVIDER: TranslationProvider = 'google'
 
 interface StoredModelMetadata {
   id: string
@@ -50,7 +50,7 @@ function cloneConfig(config: AIConfigs): AIConfigs {
 }
 
 function sanitizeTranslationProvider(value: unknown): TranslationProvider {
-  if (value === 'google' || value === 'microsoft') {
+  if (value === 'ai' || value === 'google' || value === 'microsoft') {
     return value
   }
   return DEFAULT_TRANSLATION_PROVIDER

@@ -2,6 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { getAllAIConfigsAsync, saveAllAIConfigsAsync } from '../config-repository'
 
 describe('config repository', () => {
+  it('uses Google as the default translation provider', async () => {
+    const configs = await getAllAIConfigsAsync()
+
+    expect(configs.translationProvider).toBe('google')
+  })
+
   it('removes secure API keys for models removed by a replacement save', async () => {
     await saveAllAIConfigsAsync({
       activeModelId: 'model-1',
@@ -68,6 +74,25 @@ describe('config repository', () => {
 
     const reloaded = await getAllAIConfigsAsync()
     expect(reloaded.translationProvider).toBe('google')
+  })
+
+  it('preserves AI as a selected translation provider', async () => {
+    await saveAllAIConfigsAsync({
+      activeModelId: 'model-1',
+      translationProvider: 'ai',
+      models: [
+        {
+          id: 'model-1',
+          name: 'Model One',
+          baseURL: 'https://example.com/v1',
+          apiKey: '',
+          model: 'one',
+        },
+      ],
+    })
+
+    const reloaded = await getAllAIConfigsAsync()
+    expect(reloaded.translationProvider).toBe('ai')
   })
 
   it('preserves Microsoft as a selected translation provider', async () => {
