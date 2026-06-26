@@ -1,31 +1,27 @@
-import type { Session, User } from '@supabase/supabase-js'
 import type { AIConfigs } from '@/lib/config'
-import type { SyncRow } from '@/lib/sync-service'
-import { isTauri } from '@tauri-apps/api/core'
-import { getCurrent, onOpenUrl } from '@tauri-apps/plugin-deep-link'
-import { openUrl } from '@tauri-apps/plugin-opener'
-import { Cloud, LogOut, RefreshCw } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import type { SyncDatabaseStatus, SyncRow } from '@/lib/sync-service'
+import { Cloud, Database, RefreshCw, ShieldAlert, Trash2 } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { getErrorMessage } from '@/lib/error-message'
 import {
+  clearSyncDatabaseUrl,
   downloadConfig,
   fetchRemoteConfig,
-  getCurrentUser,
-  handleOAuthCallback,
-  hasSupabaseConfig,
-  missingSupabaseConfigMessage,
-  signInWithGoogle,
-  signOut,
-  supabase,
+  getSyncDatabaseStatus,
+  missingSyncDatabaseMessage,
+  previewDatabaseUrl,
+  saveSyncDatabaseUrl,
   uploadConfig,
 } from '@/lib/sync-service'
 
 type SyncStatus = 'idle' | 'checking' | 'syncing' | 'synced' | 'error'
 
 type RemoteRefreshResult
-  = | { ok: true, currentUser: User | null, row: SyncRow | null }
+  = | { ok: true, configured: true, row: SyncRow | null }
+    | { ok: true, configured: false, row: null }
     | { ok: false }
 
 interface AccountSyncPanelProps {
@@ -45,7 +41,12 @@ function getConfigSignature(configs: AIConfigs) {
 }
 
 export function AccountSyncPanel({ configs, onImportConfig }: AccountSyncPanelProps) {
-  const [user, setUser] = useState<User | null>(null)
+  const [databaseStatus, setDatabaseStatus] = useState<SyncDatabaseStatus>({
+    configured: false,
+    preview: null,
+  })
+  const [databaseUrlInput, setDatabaseUrlInput] = useState('')
+  const [acceptInvalidTls, setAcceptInvalidTls] = useState(false)
   const [syncStatus, setSyncStatus] = useState<SyncStatus>('checking')
   const [remoteRow, setRemoteRow] = useState<SyncRow | null>(null)
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null)
@@ -53,41 +54,40 @@ export function AccountSyncPanel({ configs, onImportConfig }: AccountSyncPanelPr
   const [hasResolvedInitialSync, setHasResolvedInitialSync] = useState(false)
   const lastSyncedConfigSignatureRef = useRef<string | null>(null)
   const configsRef = useRef(configs)
-  const syncAfterLoginRef = useRef<Promise<void> | null>(null)
+  const initialSyncRef = useRef<Promise<void> | null>(null)
 
   useEffect(() => {
     configsRef.current = configs
   }, [configs])
 
-  const refreshRemote = async (): Promise<RemoteRefreshResult> => {
-    if (!supabase) {
-      setSyncStatus('idle')
-      return { ok: false }
-    }
+  const inputPreview = useMemo(() => previewDatabaseUrl(databaseUrlInput), [databaseUrlInput])
 
+  const refreshRemote = useCallback(async (): Promise<RemoteRefreshResult> => {
     setSyncStatus('checking')
     try {
-      const currentUser = await getCurrentUser()
-      setUser(currentUser)
-      if (!currentUser) {
+      const status = await getSyncDatabaseStatus()
+      setDatabaseStatus(status)
+      if (!status.configured) {
         setRemoteRow(null)
+        setLastSyncedAt(null)
         setSyncStatus('idle')
-        return { ok: true, currentUser: null, row: null }
+        return { ok: true, configured: false, row: null }
       }
+
       const row = await fetchRemoteConfig()
       setRemoteRow(row)
       setLastSyncedAt(row?.updated_at ?? null)
       setSyncStatus('idle')
-      return { ok: true, currentUser, row }
+      return { ok: true, configured: true, row }
     }
     catch (error) {
       setErrorMessage(getErrorMessage(error))
       setSyncStatus('error')
       return { ok: false }
     }
-  }
+  }, [])
 
-  const syncFromRemote = async (row: SyncRow) => {
+  const syncFromRemote = useCallback(async (row: SyncRow) => {
     const payload = downloadConfig(row)
     await onImportConfig({
       activeModelId: payload.activeModelId,
@@ -102,13 +102,12 @@ export function AccountSyncPanel({ configs, onImportConfig }: AccountSyncPanelPr
     setHasResolvedInitialSync(true)
     setLastSyncedAt(payload.updatedAt)
     setSyncStatus('synced')
-  }
+  }, [onImportConfig])
 
-  const uploadCurrentConfig = async (configsToUpload = configsRef.current) => {
+  const uploadCurrentConfig = useCallback(async (configsToUpload = configsRef.current) => {
     const payload = await uploadConfig(configsToUpload)
     lastSyncedConfigSignatureRef.current = getConfigSignature(configsToUpload)
     setRemoteRow({
-      user_id: user?.id ?? '',
       schema_version: payload.schemaVersion,
       revision: payload.revision,
       updated_at: payload.updatedAt,
@@ -118,20 +117,16 @@ export function AccountSyncPanel({ configs, onImportConfig }: AccountSyncPanelPr
     setHasResolvedInitialSync(true)
     setLastSyncedAt(payload.updatedAt)
     setSyncStatus('synced')
-  }
+  }, [])
 
-  const syncAfterLogin = async () => {
-    if (syncAfterLoginRef.current) {
-      return syncAfterLoginRef.current
+  const resolveInitialSync = useCallback(async () => {
+    if (initialSyncRef.current) {
+      return initialSyncRef.current
     }
 
-    syncAfterLoginRef.current = (async () => {
+    initialSyncRef.current = (async () => {
       const result = await refreshRemote()
-      if (!result.ok) {
-        setHasResolvedInitialSync(false)
-        return
-      }
-      if (!result.currentUser) {
+      if (!result.ok || !result.configured) {
         setHasResolvedInitialSync(false)
         return
       }
@@ -141,78 +136,44 @@ export function AccountSyncPanel({ configs, onImportConfig }: AccountSyncPanelPr
       }
       await uploadCurrentConfig()
     })().finally(() => {
-      syncAfterLoginRef.current = null
+      initialSyncRef.current = null
     })
 
-    return syncAfterLoginRef.current
-  }
+    return initialSyncRef.current
+  }, [refreshRemote, syncFromRemote, uploadCurrentConfig])
 
-  useEffect(() => {
-    void syncAfterLogin()
-
-    if (!supabase) {
-      return undefined
-    }
-
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session: Session | null) => {
-      setUser(session?.user ?? null)
-      if (!session?.user) {
+  const resolveConfiguredInitialSync = useCallback(async () => {
+    setSyncStatus('checking')
+    try {
+      const row = await fetchRemoteConfig()
+      setRemoteRow(row)
+      setLastSyncedAt(row?.updated_at ?? null)
+      if (row?.plaintext) {
+        await syncFromRemote(row)
         return
       }
-      void syncAfterLogin()
-    })
-
-    return () => {
-      authListener.subscription.unsubscribe()
+      await uploadCurrentConfig()
     }
-  }, [])
+    catch (error) {
+      setHasResolvedInitialSync(false)
+      setErrorMessage(getErrorMessage(error))
+      setSyncStatus('error')
+    }
+  }, [syncFromRemote, uploadCurrentConfig])
 
   useEffect(() => {
-    if (!supabase || !isTauri()) {
-      return undefined
-    }
+    void resolveInitialSync()
+  }, [resolveInitialSync])
 
-    let unlisten: (() => void) | undefined
-    const processUrl = async (url: string) => {
-      try {
-        await handleOAuthCallback(url)
-        await syncAfterLogin()
-      }
-      catch (error) {
-        setErrorMessage(getErrorMessage(error))
-        setSyncStatus('error')
-      }
-    }
-
-    void getCurrent()
-      .then((urls) => {
-        urls?.forEach(url => void processUrl(url))
-      })
-      .catch(() => {})
-
-    void onOpenUrl((urls) => {
-      urls.forEach(url => void processUrl(url))
-    }).then((fn) => {
-      unlisten = fn
-    })
-
-    return () => {
-      unlisten?.()
-    }
-  }, [])
-
-  const handleSignIn = async () => {
+  const handleSaveDatabaseUrl = async () => {
     setErrorMessage('')
     setSyncStatus('checking')
     try {
-      const url = await signInWithGoogle()
-      if (isTauri()) {
-        await openUrl(url)
-      }
-      else {
-        window.location.href = url
-      }
-      setSyncStatus('idle')
+      const status = await saveSyncDatabaseUrl(databaseUrlInput, { acceptInvalidTls })
+      setDatabaseStatus(status)
+      setDatabaseUrlInput('')
+      setAcceptInvalidTls(false)
+      await resolveConfiguredInitialSync()
     }
     catch (error) {
       setErrorMessage(getErrorMessage(error))
@@ -220,12 +181,12 @@ export function AccountSyncPanel({ configs, onImportConfig }: AccountSyncPanelPr
     }
   }
 
-  const handleSignOut = async () => {
+  const handleClearDatabaseUrl = async () => {
     setErrorMessage('')
     setSyncStatus('checking')
     try {
-      await signOut()
-      setUser(null)
+      await clearSyncDatabaseUrl()
+      setDatabaseStatus({ configured: false, preview: null })
       setRemoteRow(null)
       setLastSyncedAt(null)
       setHasResolvedInitialSync(false)
@@ -251,7 +212,7 @@ export function AccountSyncPanel({ configs, onImportConfig }: AccountSyncPanelPr
   }
 
   useEffect(() => {
-    if (!user || syncStatus === 'checking' || syncStatus === 'syncing') {
+    if (!databaseStatus.configured || syncStatus === 'checking' || syncStatus === 'syncing') {
       return
     }
     if (!hasResolvedInitialSync) {
@@ -272,7 +233,7 @@ export function AccountSyncPanel({ configs, onImportConfig }: AccountSyncPanelPr
     }, 800)
 
     return () => window.clearTimeout(timer)
-  }, [configs, hasResolvedInitialSync, syncStatus, user])
+  }, [configs, databaseStatus.configured, hasResolvedInitialSync, syncStatus, uploadCurrentConfig])
 
   const statusLabel = syncStatus === 'checking'
     ? '检查中'
@@ -282,32 +243,37 @@ export function AccountSyncPanel({ configs, onImportConfig }: AccountSyncPanelPr
         ? '已同步'
         : syncStatus === 'error'
           ? '需要处理'
-          : user
-            ? '已登录'
-            : '未登录'
+          : databaseStatus.configured
+            ? '已连接'
+            : '未连接'
 
   return (
     <section className="p-2">
-      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-        <div className="min-w-0 space-y-1">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="min-w-0 flex-1 space-y-2">
           <div className="flex items-center gap-2">
             <Cloud className="h-5 w-5 text-blue-600" />
-            <h2 className="text-xl font-bold">账号与同步</h2>
+            <h2 className="text-xl font-bold">同步</h2>
             <Badge variant={syncStatus === 'error' ? 'destructive' : 'secondary'}>{statusLabel}</Badge>
           </div>
           <p className="text-sm text-muted-foreground">
-            登录后自动同步 AI 配置。云端数据由 Supabase Auth 和 RLS 限制为仅当前账号可访问。
+            使用你自己的 Supabase 数据库连接池 URL 同步 AI 配置。URL 保存在系统安全存储中，不会显示密码。
+          </p>
+          <p className="text-xs text-muted-foreground">
+            推荐复制 Supabase Dashboard 的 Session pooler URI（通常端口 5432）；Transaction pooler 通常是 6543，也可以连接。
+          </p>
+          <p className="text-xs text-muted-foreground">
+            如果保存时报 UnknownIssuer，推荐下载 Supabase Server root certificate 并追加 sslrootcert；也可临时跳过证书校验。
           </p>
           <p className="text-sm text-muted-foreground">
             上次同步：
             {' '}
             {formatDate(lastSyncedAt)}
           </p>
-          {user?.email && (
-            <p className="text-sm">
-              当前账号：
-              {' '}
-              <span className="font-medium">{user.email}</span>
+          {databaseStatus.preview && (
+            <p className="flex items-center gap-2 text-sm">
+              <Database className="h-4 w-4 text-muted-foreground" />
+              <span className="min-w-0 truncate font-medium">{databaseStatus.preview}</span>
             </p>
           )}
           {remoteRow && (
@@ -317,9 +283,9 @@ export function AccountSyncPanel({ configs, onImportConfig }: AccountSyncPanelPr
               {remoteRow.revision}
             </p>
           )}
-          {!hasSupabaseConfig && (
+          {!databaseStatus.configured && (
             <p className="text-sm text-amber-600 dark:text-amber-400" role="alert">
-              {missingSupabaseConfigMessage}
+              {missingSyncDatabaseMessage}
               。
             </p>
           )}
@@ -330,30 +296,59 @@ export function AccountSyncPanel({ configs, onImportConfig }: AccountSyncPanelPr
           )}
         </div>
 
-        <div className="flex flex-col gap-2 md:min-w-64">
-          {!user
-            ? (
-                <Button onClick={handleSignIn} disabled={!hasSupabaseConfig || syncStatus === 'checking'}>
-                  使用 Google 登录
-                </Button>
-              )
-            : (
-                <>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Button size="sm" onClick={handleUpload} disabled={syncStatus === 'syncing'} className="col-span-2">
-                      <RefreshCw className="h-4 w-4" />
-                      立即同步
-                    </Button>
-                  </div>
-                  <Button size="sm" variant="ghost" onClick={handleSignOut}>
-                    <LogOut className="h-4 w-4" />
-                    退出登录
-                  </Button>
-                </>
-              )}
-          <Button size="sm" variant="outline" onClick={refreshRemote} disabled={!hasSupabaseConfig || syncStatus === 'checking'}>
-            刷新状态
-          </Button>
+        <div className="flex flex-col gap-2 md:min-w-96">
+          <label className="space-y-1 text-sm font-medium">
+            <span>Supabase 连接池 URL</span>
+            <Input
+              type="password"
+              autoComplete="off"
+              value={databaseUrlInput}
+              onChange={event => setDatabaseUrlInput(event.target.value)}
+              placeholder="postgresql://postgres.xxx:password@...pooler.supabase.com:5432/postgres"
+              aria-label="Supabase 连接池 URL"
+            />
+          </label>
+          {inputPreview && (
+            <p className="truncate text-xs text-muted-foreground">
+              预览：
+              {' '}
+              {inputPreview}
+            </p>
+          )}
+          <label className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+            <input
+              type="checkbox"
+              checked={acceptInvalidTls}
+              onChange={event => setAcceptInvalidTls(event.target.checked)}
+              className="mt-0.5 size-4 shrink-0"
+              aria-label="跳过数据库证书校验"
+            />
+            <span className="min-w-0">
+              <span className="inline-flex items-center gap-1 font-medium">
+                <ShieldAlert className="h-3.5 w-3.5" />
+                跳过证书校验
+              </span>
+              <span className="block">仅在 UnknownIssuer 时使用。仍使用 TLS 加密，但无法确认服务器身份。</span>
+            </span>
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            <Button onClick={handleSaveDatabaseUrl} disabled={!databaseUrlInput.trim() || syncStatus === 'checking'}>
+              保存连接
+            </Button>
+            <Button size="sm" variant="outline" onClick={refreshRemote} disabled={syncStatus === 'checking'}>
+              刷新状态
+            </Button>
+            <Button size="sm" onClick={handleUpload} disabled={!databaseStatus.configured || syncStatus === 'syncing'} className="col-span-2">
+              <RefreshCw className="h-4 w-4" />
+              立即同步
+            </Button>
+            {databaseStatus.configured && (
+              <Button size="sm" variant="ghost" onClick={handleClearDatabaseUrl} className="col-span-2">
+                <Trash2 className="h-4 w-4" />
+                清除连接
+              </Button>
+            )}
+          </div>
         </div>
       </div>
     </section>

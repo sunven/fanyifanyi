@@ -447,7 +447,7 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
             <p className="text-sm text-blue-800 dark:text-blue-300">
               <strong>提示：</strong>
               {' '}
-              API Key 会迁移到系统安全存储；登录后会通过 Supabase 自动同步配置。点击模型卡片可切换使用的模型。
+              API Key 会迁移到系统安全存储；配置 Supabase 连接池 URL 后会自动同步配置。点击模型卡片可切换使用的模型。
             </p>
           </div>
         </div>

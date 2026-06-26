@@ -1,13 +1,9 @@
-import type { User } from '@supabase/supabase-js'
 import type { AIConfigs } from './config'
-import { getAuthRedirectUrl, hasSupabaseConfig, supabase } from './supabase'
+import { invoke } from '@tauri-apps/api/core'
 
-export const missingSupabaseConfigMessage = import.meta.env.DEV
-  ? '缺少 Supabase 配置，请检查 .env.local'
-  : '缺少 Supabase 构建配置，请检查发布环境变量 VITE_SUPABASE_URL 和 VITE_SUPABASE_ANON_KEY'
+export const missingSyncDatabaseMessage = '请先粘贴 Supabase 连接池 URL 并保存连接'
 
 export interface SyncRow {
-  user_id: string
   schema_version: number
   revision: string
   updated_at: string
@@ -25,7 +21,18 @@ export interface SyncPayloadPlaintext {
   models: AIConfigs['models']
 }
 
+export interface SyncDatabaseStatus {
+  configured: boolean
+  preview: string | null
+}
+
+export interface SaveSyncDatabaseUrlOptions {
+  acceptInvalidTls?: boolean
+}
+
 const DEVICE_ID_KEY = 'fanyifanyi_sync_device_id'
+const ACCEPT_INVALID_TLS_PARAM = 'sslaccept'
+const ACCEPT_INVALID_TLS_VALUE = 'invalid'
 
 function getDeviceId() {
   try {
@@ -61,96 +68,61 @@ function validateSyncPayload(payload: SyncPayloadPlaintext): SyncPayloadPlaintex
   }
 }
 
-export async function signInWithGoogle() {
-  if (!supabase) {
-    throw new Error(missingSupabaseConfigMessage)
+export function previewDatabaseUrl(databaseUrl: string): string | null {
+  const value = databaseUrl.trim()
+  if (!value) {
+    return null
   }
 
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: 'google',
-    options: {
-      redirectTo: getAuthRedirectUrl(),
-      skipBrowserRedirect: true,
-    },
+  try {
+    const parsed = new URL(value)
+    if (!parsed.hostname.endsWith('.pooler.supabase.com') && !parsed.hostname.endsWith('.supabase.co')) {
+      return null
+    }
+    const database = parsed.pathname.replace(/^\/+/, '') || 'postgres'
+    const port = parsed.port || (parsed.protocol === 'postgres:' || parsed.protocol === 'postgresql:' ? '5432' : '')
+    const host = port ? `${parsed.hostname}:${port}` : parsed.hostname
+    const user = parsed.username ? `${decodeURIComponent(parsed.username)}:****@` : ''
+    return `${user}${host}/${database}`
+  }
+  catch {
+    return null
+  }
+}
+
+export function buildSyncDatabaseUrl(databaseUrl: string, options: SaveSyncDatabaseUrlOptions = {}) {
+  const value = databaseUrl.trim()
+  if (!options.acceptInvalidTls) {
+    return value
+  }
+
+  const parsed = new URL(value)
+  parsed.searchParams.set(ACCEPT_INVALID_TLS_PARAM, ACCEPT_INVALID_TLS_VALUE)
+  return parsed.toString()
+}
+
+export async function getSyncDatabaseStatus(): Promise<SyncDatabaseStatus> {
+  return invoke<SyncDatabaseStatus>('sync_database_status')
+}
+
+export async function saveSyncDatabaseUrl(
+  databaseUrl: string,
+  options: SaveSyncDatabaseUrlOptions = {},
+): Promise<SyncDatabaseStatus> {
+  return invoke<SyncDatabaseStatus>('sync_database_save_url', {
+    databaseUrl: buildSyncDatabaseUrl(databaseUrl, options),
   })
-
-  if (error) {
-    throw error
-  }
-  if (!data.url) {
-    throw new Error('没有收到 Google 登录地址')
-  }
-  return data.url
 }
 
-export async function handleOAuthCallback(url: string) {
-  if (!supabase) {
-    throw new Error(missingSupabaseConfigMessage)
-  }
-
-  const parsed = new URL(url)
-  const errorDescription = parsed.searchParams.get('error_description') ?? parsed.searchParams.get('error')
-  if (errorDescription) {
-    throw new Error(errorDescription)
-  }
-
-  const code = parsed.searchParams.get('code')
-  if (!code) {
-    return null
-  }
-
-  const { data, error } = await supabase.auth.exchangeCodeForSession(code)
-  if (error) {
-    throw error
-  }
-  return data.session
-}
-
-export async function getCurrentUser(): Promise<User | null> {
-  if (!supabase) {
-    return null
-  }
-
-  const { data } = await supabase.auth.getUser()
-  return data.user
-}
-
-export async function signOut() {
-  if (!supabase) {
-    return
-  }
-  const { error } = await supabase.auth.signOut()
-  if (error) {
-    throw error
-  }
+export async function clearSyncDatabaseUrl(): Promise<void> {
+  await invoke('sync_database_clear')
 }
 
 export async function fetchRemoteConfig(): Promise<SyncRow | null> {
-  if (!supabase) {
-    throw new Error(missingSupabaseConfigMessage)
-  }
-
-  const { data, error } = await supabase
-    .from('user_ai_configs')
-    .select('user_id,schema_version,revision,updated_at,device_id,plaintext')
-    .maybeSingle()
-
-  if (error) {
-    throw error
-  }
-  return data as SyncRow | null
+  return invoke<SyncRow | null>('sync_fetch_config')
 }
 
 export async function uploadConfig(configs: AIConfigs) {
-  if (!supabase) {
-    throw new Error(missingSupabaseConfigMessage)
-  }
-
-  const user = await getCurrentUser()
-  if (!user) {
-    throw new Error('请先登录 Google 账号')
-  }
-
   const updatedAt = new Date().toISOString()
   const payload: SyncPayloadPlaintext = {
     schemaVersion: 1,
@@ -162,22 +134,7 @@ export async function uploadConfig(configs: AIConfigs) {
     models: configs.models,
   }
 
-  const { error } = await supabase
-    .from('user_ai_configs')
-    .upsert({
-      user_id: user.id,
-      schema_version: payload.schemaVersion,
-      revision: payload.revision,
-      updated_at: payload.updatedAt,
-      device_id: payload.deviceId,
-      plaintext: payload,
-    }, {
-      onConflict: 'user_id',
-    })
-
-  if (error) {
-    throw error
-  }
+  await invoke('sync_upload_config', { payload })
   return payload
 }
 
@@ -187,5 +144,3 @@ export function downloadConfig(row: SyncRow): SyncPayloadPlaintext {
   }
   return validateSyncPayload(row.plaintext)
 }
-
-export { hasSupabaseConfig, supabase }

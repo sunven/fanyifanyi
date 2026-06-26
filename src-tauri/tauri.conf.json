@@ -39,14 +39,6 @@
     "publisher": "fanyifanyi"
   },
   "plugins": {
-    "deep-link": {
-      "desktop": {
-        "schemes": [
-          "fanyifanyi",
-          "fanyifanyi-dev"
-        ]
-      }
-    },
     "updater": {
       "active": true,
       "endpoints": [

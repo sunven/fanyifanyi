@@ -8,9 +8,7 @@
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
-    "opener:default",
     "http:default",
-    "deep-link:default",
     "updater:default",
     "log:default",
     "process:allow-restart"
