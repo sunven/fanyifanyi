@@ -727,6 +727,23 @@ fn screenshot_temp_path(prefix: &str) -> PathBuf {
     ))
 }
 
+#[cfg(target_os = "macos")]
+#[link(name = "CoreGraphics", kind = "framework")]
+extern "C" {
+    fn CGPreflightScreenCaptureAccess() -> bool;
+    fn CGRequestScreenCaptureAccess() -> bool;
+}
+
+#[cfg(target_os = "macos")]
+fn ensure_screen_capture_access() -> Result<(), String> {
+    let allowed = unsafe { CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess() };
+    if allowed {
+        return Ok(());
+    }
+
+    Err("无法截图。请在 macOS 系统设置 > 隐私与安全性 > 屏幕录制 中允许 fanyifanyi。".to_string())
+}
+
 fn is_screenshot_temp_path(path: &Path) -> bool {
     let Some(file_name) = path.file_name().and_then(|value| value.to_str()) else {
         return false;
@@ -765,6 +782,7 @@ fn capture_screen_region(region: ScreenRegion) -> Result<CapturedScreenshot, Str
 
 #[cfg(target_os = "macos")]
 fn capture_screen_region_impl(region: ScreenRegion) -> Result<CapturedScreenshot, String> {
+    ensure_screen_capture_access()?;
     let (x, y, width, height) = rounded_capture_region(region)?;
     let image_path = screenshot_temp_path("screen");
     let rect = format!("{},{},{},{}", x, y, width, height);

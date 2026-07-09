@@ -1,6 +1,6 @@
 import { convertFileSrc, invoke } from '@tauri-apps/api/core'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
-import { cursorPosition, monitorFromPoint } from '@tauri-apps/api/window'
+import { cursorPosition, getCurrentWindow, monitorFromPoint } from '@tauri-apps/api/window'
 import { getTranslationSettingsLoaded } from './config'
 
 export interface ScreenRegion {
@@ -15,6 +15,7 @@ export interface CapturedScreenshot {
 }
 
 export interface SelectionWindowParams {
+  imagePath: string
   screenX: number
   screenY: number
   screenWidth: number
@@ -79,6 +80,7 @@ export async function translateScreenshotText(text: string) {
 }
 
 export async function openScreenshotSelectionWindow() {
+  const appWindow = getCurrentWindow()
   const position = await cursorPosition()
   const monitor = await monitorFromPoint(position.x, position.y)
   if (!monitor) {
@@ -87,7 +89,24 @@ export async function openScreenshotSelectionWindow() {
 
   const logicalPosition = monitor.position.toLogical(monitor.scaleFactor)
   const logicalSize = monitor.size.toLogical(monitor.scaleFactor)
+  await appWindow.hide()
+
+  let capture: CapturedScreenshot
+  try {
+    await new Promise(resolve => setTimeout(resolve, 120))
+    capture = await captureScreenRegion({
+      x: monitor.position.x,
+      y: monitor.position.y,
+      width: monitor.size.width,
+      height: monitor.size.height,
+    })
+  }
+  finally {
+    await appWindow.show().catch(() => undefined)
+  }
+
   const params: SelectionWindowParams = {
+    imagePath: capture.imagePath,
     screenX: monitor.position.x,
     screenY: monitor.position.y,
     screenWidth: monitor.size.width,
@@ -118,10 +137,16 @@ export async function openScreenshotSelectionWindow() {
     focus: true,
   })
 
-  await new Promise<void>((resolve, reject) => {
-    win.once('tauri://created', () => resolve())
-    win.once('tauri://error', event => reject(new Error(String(event.payload))))
-  })
+  try {
+    await new Promise<void>((resolve, reject) => {
+      win.once('tauri://created', () => resolve())
+      win.once('tauri://error', event => reject(new Error(String(event.payload))))
+    })
+  }
+  catch (err) {
+    await deleteScreenshotFile(capture.imagePath).catch(() => undefined)
+    throw err
+  }
 }
 
 export async function openTranslationOverlay(payload: TranslationOverlayPayload) {
@@ -152,6 +177,7 @@ export async function openTranslationOverlay(payload: TranslationOverlayPayload)
 export function readSelectionWindowParams(search = window.location.search): SelectionWindowParams {
   const params = new URLSearchParams(search)
   return {
+    imagePath: params.get('imagePath') ?? '',
     screenX: Number(params.get('screenX')),
     screenY: Number(params.get('screenY')),
     screenWidth: Number(params.get('screenWidth')),

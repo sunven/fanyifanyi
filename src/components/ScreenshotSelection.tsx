@@ -4,7 +4,6 @@ import { X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import {
-  captureScreenRegion,
   deleteScreenshotFile,
   logicalOverlayRect,
   openTranslationOverlay,
@@ -26,7 +25,7 @@ function normalizeSelection(startX: number, startY: number, endX: number, endY: 
 
 export default function ScreenshotSelection() {
   const params = useMemo(() => readSelectionWindowParams(), [])
-  const [imagePath, setImagePath] = useState('')
+  const imagePath = params.imagePath
   const [error, setError] = useState('')
   const [dragStart, setDragStart] = useState<{ x: number, y: number } | null>(null)
   const [selection, setSelection] = useState<ScreenRegion | null>(null)
@@ -40,36 +39,16 @@ export default function ScreenshotSelection() {
   }, [imagePath])
 
   useEffect(() => {
-    let cancelled = false
-
-    async function loadScreenshot() {
-      try {
-        const capture = await captureScreenRegion({
-          x: params.screenX,
-          y: params.screenY,
-          width: params.screenWidth,
-          height: params.screenHeight,
-        })
-        if (cancelled) {
-          await deleteScreenshotFile(capture.imagePath).catch(() => undefined)
-          return
-        }
-        setImagePath(capture.imagePath)
-        await getCurrentWindow().show()
-        await getCurrentWindow().setFocus()
+    async function showWindow() {
+      if (!imagePath) {
+        setError('截图文件不存在')
       }
-      catch (err) {
-        setError(err instanceof Error ? err.message : String(err))
-        await getCurrentWindow().show()
-      }
+      await getCurrentWindow().show()
+      await getCurrentWindow().setFocus()
     }
 
-    loadScreenshot()
-
-    return () => {
-      cancelled = true
-    }
-  }, [params])
+    void showWindow()
+  }, [imagePath])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
