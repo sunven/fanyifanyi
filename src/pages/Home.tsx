@@ -1,4 +1,4 @@
-import { Settings as SettingsIcon, X } from 'lucide-react'
+import { ScanText, Settings as SettingsIcon, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import CopyTextButton from '@/components/CopyText'
 import DictionaryDisplay from '@/components/dictionary-display'
@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { UpdateToast } from '@/components/update-toast'
 import { TitleBarSpacer, WindowTitleBar } from '@/components/WindowTitleBar'
 import { useUpdate } from '@/contexts/UpdateContext'
+import { openScreenshotSelectionWindow } from '@/lib/screenshot-translation'
 import Settings from './Settings'
 
 export default function TranslationApp() {
@@ -17,6 +18,7 @@ export default function TranslationApp() {
   const [settingsInitialSection, setSettingsInitialSection] = useState<'updates' | undefined>()
   const [toastVersion, setToastVersion] = useState<string | null>(null)
   const [lastPromptedVersion, setLastPromptedVersion] = useState<string | null>(null)
+  const [screenshotError, setScreenshotError] = useState('')
   const { hasUpdate, updateInfo } = useUpdate()
 
   useEffect(() => {
@@ -45,10 +47,29 @@ export default function TranslationApp() {
     setSettingsInitialSection(undefined)
   }
 
+  const handleScreenshotTranslation = async () => {
+    setScreenshotError('')
+    try {
+      await openScreenshotSelectionWindow()
+    }
+    catch (err) {
+      setScreenshotError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
   return (
     <>
       <div className="flex flex-col h-screen" hidden={showSettings}>
         <WindowTitleBar title="fanyifanyi" controlsPosition="right">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleScreenshotTranslation}
+            className="h-7 px-2 text-xs"
+          >
+            <ScanText className="h-4 w-4" />
+            截图翻译
+          </Button>
           <Button
             variant="ghost"
             size="sm"
@@ -60,6 +81,11 @@ export default function TranslationApp() {
           </Button>
         </WindowTitleBar>
         <TitleBarSpacer />
+        {screenshotError && (
+          <div className="mx-4 mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+            {screenshotError}
+          </div>
+        )}
         <Tabs defaultValue="translate" className="flex flex-col h-full">
           <div className="flex justify-center items-center p-1">
             <TabsList>

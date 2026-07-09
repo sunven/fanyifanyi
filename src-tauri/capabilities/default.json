@@ -3,10 +3,19 @@
   "identifier": "default",
   "description": "Capability for the main window",
   "windows": [
-    "main"
+    "main",
+    "screenshot-selection-*",
+    "translation-overlay-*"
   ],
   "permissions": [
     "core:default",
+    "core:webview:allow-create-webview-window",
+    "core:window:allow-close",
+    "core:window:allow-cursor-position",
+    "core:window:allow-destroy",
+    "core:window:allow-monitor-from-point",
+    "core:window:allow-set-focus",
+    "core:window:allow-show",
     "core:window:allow-start-dragging",
     "http:default",
     "updater:default",

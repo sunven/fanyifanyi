@@ -1,4 +1,11 @@
-use std::{error::Error as StdError, path::Path, sync::Arc, time::Duration};
+use std::{
+    error::Error as StdError,
+    fs,
+    path::{Path, PathBuf},
+    process::Command,
+    sync::Arc,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use keyring::{Entry, Error as KeyringError};
 use rustls::{
@@ -45,6 +52,21 @@ struct SyncPayloadPlaintext {
     active_model_id: String,
     translation_provider: String,
     models: serde_json::Value,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ScreenRegion {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CapturedScreenshot {
+    image_path: String,
 }
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -666,6 +688,243 @@ fn normalize_openai_base_url(base_url: &str) -> String {
     normalized
 }
 
+fn validate_screen_region(region: ScreenRegion) -> Result<ScreenRegion, String> {
+    if !region.x.is_finite()
+        || !region.y.is_finite()
+        || !region.width.is_finite()
+        || !region.height.is_finite()
+    {
+        return Err("截图区域包含无效坐标".to_string());
+    }
+    if region.width < 2.0 || region.height < 2.0 {
+        return Err("截图区域太小".to_string());
+    }
+
+    Ok(region)
+}
+
+fn rounded_capture_region(region: ScreenRegion) -> Result<(i64, i64, u64, u64), String> {
+    let region = validate_screen_region(region)?;
+    Ok((
+        region.x.round() as i64,
+        region.y.round() as i64,
+        region.width.round().max(2.0) as u64,
+        region.height.round().max(2.0) as u64,
+    ))
+}
+
+fn screenshot_temp_path(prefix: &str) -> PathBuf {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+
+    std::env::temp_dir().join(format!(
+        "fanyifanyi-{}-{}-{}.png",
+        prefix,
+        std::process::id(),
+        nanos
+    ))
+}
+
+fn is_screenshot_temp_path(path: &Path) -> bool {
+    let Some(file_name) = path.file_name().and_then(|value| value.to_str()) else {
+        return false;
+    };
+    if !file_name.starts_with("fanyifanyi-screen-") || !file_name.ends_with(".png") {
+        return false;
+    }
+
+    let Some(parent) = path.parent() else {
+        return false;
+    };
+    match (parent.canonicalize(), std::env::temp_dir().canonicalize()) {
+        (Ok(parent), Ok(temp_dir)) => parent == temp_dir,
+        _ => parent == std::env::temp_dir(),
+    }
+}
+
+#[tauri::command]
+fn delete_screenshot_file(image_path: String) -> Result<(), String> {
+    let image_path = PathBuf::from(image_path);
+    if !is_screenshot_temp_path(&image_path) {
+        return Err("截图临时文件路径无效".to_string());
+    }
+
+    match fs::remove_file(&image_path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!("删除截图临时文件失败: {}", error)),
+    }
+}
+
+#[tauri::command]
+fn capture_screen_region(region: ScreenRegion) -> Result<CapturedScreenshot, String> {
+    capture_screen_region_impl(region)
+}
+
+#[cfg(target_os = "macos")]
+fn capture_screen_region_impl(region: ScreenRegion) -> Result<CapturedScreenshot, String> {
+    let (x, y, width, height) = rounded_capture_region(region)?;
+    let image_path = screenshot_temp_path("screen");
+    let rect = format!("{},{},{},{}", x, y, width, height);
+
+    let output = Command::new("screencapture")
+        .args(["-x", "-R", &rect])
+        .arg(&image_path)
+        .output()
+        .map_err(|error| format!("调用 macOS 截图失败: {}", error))?;
+
+    if !output.status.success() || !image_path.exists() {
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if detail.is_empty() {
+            return Err(
+                "无法截图。请在 macOS 系统设置 > 隐私与安全性 > 屏幕录制 中允许 fanyifanyi。"
+                    .to_string(),
+            );
+        }
+        return Err(format!(
+            "无法截图。请检查屏幕录制权限。原始错误：{}",
+            detail
+        ));
+    }
+
+    Ok(CapturedScreenshot {
+        image_path: image_path.to_string_lossy().into_owned(),
+    })
+}
+
+#[cfg(not(target_os = "macos"))]
+fn capture_screen_region_impl(_region: ScreenRegion) -> Result<CapturedScreenshot, String> {
+    Err("截图翻译第一版仅支持 macOS".to_string())
+}
+
+fn vision_roi(
+    image_region: ScreenRegion,
+    image_width: f64,
+    image_height: f64,
+) -> Result<(f64, f64, f64, f64), String> {
+    let image_region = validate_screen_region(image_region)?;
+    if !image_width.is_finite()
+        || !image_height.is_finite()
+        || image_width <= 0.0
+        || image_height <= 0.0
+    {
+        return Err("截图尺寸无效".to_string());
+    }
+
+    let x = (image_region.x / image_width).clamp(0.0, 1.0);
+    let width = (image_region.width / image_width).clamp(0.0, 1.0 - x);
+    let height = (image_region.height / image_height).clamp(0.0, 1.0);
+    let y = (1.0 - ((image_region.y + image_region.height) / image_height)).clamp(0.0, 1.0);
+
+    if width <= 0.0 || height <= 0.0 {
+        return Err("截图区域超出图片范围".to_string());
+    }
+
+    Ok((x, y, width, height))
+}
+
+#[tauri::command]
+fn recognize_screenshot_text(
+    image_path: String,
+    image_region: ScreenRegion,
+    image_width: f64,
+    image_height: f64,
+) -> Result<String, String> {
+    let image_path = PathBuf::from(image_path);
+    if !is_screenshot_temp_path(&image_path) {
+        return Err("截图临时文件路径无效".to_string());
+    }
+    recognize_screenshot_text_impl(image_path, image_region, image_width, image_height)
+}
+
+#[cfg(target_os = "macos")]
+fn recognize_screenshot_text_impl(
+    image_path: PathBuf,
+    image_region: ScreenRegion,
+    image_width: f64,
+    image_height: f64,
+) -> Result<String, String> {
+    use objc2::{rc::autoreleasepool, AnyThread, ClassType};
+    use objc2_core_foundation::{CGPoint, CGRect, CGSize};
+    use objc2_foundation::{NSArray, NSDictionary, NSString, NSURL};
+    use objc2_vision::{
+        VNImageRequestHandler, VNRecognizeTextRequest, VNRequest, VNRequestTextRecognitionLevel,
+    };
+
+    if !image_path.exists() {
+        return Err("截图文件不存在".to_string());
+    }
+    let (roi_x, roi_y, roi_width, roi_height) =
+        vision_roi(image_region, image_width, image_height)?;
+
+    autoreleasepool(|_| {
+        let url = NSURL::from_file_path(&image_path)
+            .ok_or_else(|| "截图路径无法转换为文件 URL".to_string())?;
+        let options = NSDictionary::new();
+
+        let handler = unsafe {
+            VNImageRequestHandler::initWithURL_options(
+                VNImageRequestHandler::alloc(),
+                &url,
+                &options,
+            )
+        };
+        let request = unsafe { VNRecognizeTextRequest::init(VNRecognizeTextRequest::alloc()) };
+        let english = NSString::from_str("en-US");
+        let languages = NSArray::from_slice(&[&*english]);
+
+        request.setRecognitionLanguages(&languages);
+        request.setRecognitionLevel(VNRequestTextRecognitionLevel::Accurate);
+        request.setUsesLanguageCorrection(true);
+        unsafe {
+            request.as_super().setRegionOfInterest(CGRect::new(
+                CGPoint::new(roi_x, roi_y),
+                CGSize::new(roi_width, roi_height),
+            ));
+        }
+
+        let request_for_handler = request.clone().into_super().into_super();
+        let requests = NSArray::<VNRequest>::from_retained_slice(&[request_for_handler]);
+        handler
+            .performRequests_error(&requests)
+            .map_err(|error| format!("本地 OCR 失败: {:?}", error))?;
+
+        let observations = request
+            .results()
+            .ok_or_else(|| "本地 OCR 没有返回结果".to_string())?;
+        let mut lines = Vec::new();
+        for observation in observations.iter() {
+            let candidates = observation.topCandidates(1);
+            let Some(candidate) = (unsafe { candidates.firstObject_unchecked() }) else {
+                continue;
+            };
+            let text = candidate.string().to_string();
+            let text = text.trim();
+            if !text.is_empty() {
+                lines.push(text.to_string());
+            }
+        }
+
+        if lines.is_empty() {
+            return Err("未识别到英文文本".to_string());
+        }
+
+        Ok(lines.join("\n"))
+    })
+}
+
+#[cfg(not(target_os = "macos"))]
+fn recognize_screenshot_text_impl(
+    _image_path: PathBuf,
+    _image_region: ScreenRegion,
+    _image_width: f64,
+    _image_height: f64,
+) -> Result<String, String> {
+    Err("截图翻译第一版仅支持 macOS".to_string())
+}
+
 fn translate_prompt(text: &str) -> String {
     format!(
         "你的任务是自动判断待翻译文本的语言并进行中英互译。若待翻译文本为中文，则将其翻译成英文；若待翻译文本为英文，则将其翻译成中文。请仔细阅读以下信息，并完成翻译。\n\n\
@@ -678,6 +937,17 @@ fn translate_prompt(text: &str) -> String {
 2. 尽量使用自然、流畅的表达方式。\n\
 3. 注意语法和拼写的正确性。\n\n\
 请直接输出翻译结果，不需要添加任何标签或说明。",
+        text
+    )
+}
+
+fn screenshot_translate_prompt(text: &str) -> String {
+    format!(
+        "你的任务是把截图 OCR 得到的英文文本翻译成中文。请只输出中文译文，不要解释、不要添加标签。\n\n\
+英文文本:\n\
+<text>\n\
+{}\n\
+</text>",
         text
     )
 }
@@ -844,6 +1114,26 @@ async fn translate_text(
     model: String,
     text: String,
 ) -> Result<String, String> {
+    translate_text_with_prompt(base_url, api_key, model, text, translate_prompt).await
+}
+
+#[tauri::command]
+async fn translate_text_to_chinese(
+    base_url: String,
+    api_key: String,
+    model: String,
+    text: String,
+) -> Result<String, String> {
+    translate_text_with_prompt(base_url, api_key, model, text, screenshot_translate_prompt).await
+}
+
+async fn translate_text_with_prompt(
+    base_url: String,
+    api_key: String,
+    model: String,
+    text: String,
+    prompt: fn(&str) -> String,
+) -> Result<String, String> {
     let (base_url, api_key, model) = validate_ai_request_config(base_url, api_key, model)?;
     if text.trim().is_empty() {
         return Ok(String::new());
@@ -860,7 +1150,7 @@ async fn translate_text(
         "messages": [
             {
                 "role": "user",
-                "content": translate_prompt(&text)
+                "content": prompt(&text)
             }
         ]
     })
@@ -911,11 +1201,23 @@ async fn translate_text(
 
 #[tauri::command]
 async fn translate_with_google(text: String) -> Result<String, String> {
+    let target_language = google_target_language(&text);
+    translate_with_google_target(text, target_language).await
+}
+
+#[tauri::command]
+async fn translate_with_google_to_chinese(text: String) -> Result<String, String> {
+    translate_with_google_target(text, "zh-CN").await
+}
+
+async fn translate_with_google_target(
+    text: String,
+    target_language: &str,
+) -> Result<String, String> {
     if text.trim().is_empty() {
         return Ok(String::new());
     }
 
-    let target_language = google_target_language(&text);
     let url = format!(
         "https://translate.googleapis.com/translate_a/single?client=gtx&dt=t&dj=1&ie=UTF-8&sl=auto&tl={}&q={}",
         target_language,
@@ -967,6 +1269,19 @@ async fn translate_with_google(text: String) -> Result<String, String> {
 
 #[tauri::command]
 async fn translate_with_microsoft(text: String) -> Result<String, String> {
+    let target_language = google_target_language(&text);
+    translate_with_microsoft_target(text, target_language).await
+}
+
+#[tauri::command]
+async fn translate_with_microsoft_to_chinese(text: String) -> Result<String, String> {
+    translate_with_microsoft_target(text, "zh-CN").await
+}
+
+async fn translate_with_microsoft_target(
+    text: String,
+    target_language: &str,
+) -> Result<String, String> {
     if text.trim().is_empty() {
         return Ok(String::new());
     }
@@ -1021,7 +1336,6 @@ async fn translate_with_microsoft(text: String) -> Result<String, String> {
     }
     validate_microsoft_token(token)?;
 
-    let target_language = google_target_language(&text);
     let url = format!(
         "https://api-edge.cognitive.microsofttranslator.com/translate?api-version=3.0&to={}",
         target_language
@@ -1094,10 +1408,16 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
             greet,
+            capture_screen_region,
+            delete_screenshot_file,
             get_dict_data,
+            recognize_screenshot_text,
             translate_text,
+            translate_text_to_chinese,
             translate_with_google,
+            translate_with_google_to_chinese,
             translate_with_microsoft,
+            translate_with_microsoft_to_chinese,
             test_ai_config,
             secure_storage_get,
             secure_storage_set,
@@ -1118,10 +1438,12 @@ mod tests {
 
     use super::{
         database_config_from_url, database_connection_error_message, database_url_preview,
-        google_target_language, normalize_openai_base_url, parse_google_translation,
-        parse_microsoft_translation, redact_database_error, sync_database_root_cert_store,
-        sync_database_accepts_invalid_tls, sync_upload_config_sql, validate_database_url,
-        validate_microsoft_token,
+        delete_screenshot_file, google_target_language, is_screenshot_temp_path,
+        normalize_openai_base_url, parse_google_translation, parse_microsoft_translation,
+        recognize_screenshot_text, redact_database_error, screenshot_temp_path,
+        screenshot_translate_prompt, sync_database_accepts_invalid_tls,
+        sync_database_root_cert_store, sync_upload_config_sql, validate_database_url,
+        validate_microsoft_token, vision_roi, ScreenRegion,
     };
     use tokio_postgres::config::{Host, SslMode};
 
@@ -1149,6 +1471,76 @@ mod tests {
     fn chooses_google_target_language_for_cjk_input() {
         assert_eq!(google_target_language("你好"), "en");
         assert_eq!(google_target_language("Hello"), "zh-CN");
+    }
+
+    #[test]
+    fn screenshot_translation_prompt_is_fixed_english_to_chinese() {
+        let prompt = screenshot_translate_prompt("你好\nHello");
+
+        assert!(prompt.contains("英文文本"));
+        assert!(prompt.contains("翻译成中文"));
+        assert!(!prompt.contains("中文，则将其翻译成英文"));
+    }
+
+    #[test]
+    fn converts_top_left_selection_to_vision_roi() {
+        let roi = vision_roi(
+            ScreenRegion {
+                x: 100.0,
+                y: 50.0,
+                width: 200.0,
+                height: 100.0,
+            },
+            1000.0,
+            500.0,
+        )
+        .unwrap();
+
+        assert_eq!(roi, (0.1, 0.7, 0.2, 0.2));
+    }
+
+    #[test]
+    fn only_accepts_app_owned_screenshot_temp_paths() {
+        assert!(is_screenshot_temp_path(&screenshot_temp_path("screen")));
+        assert!(!is_screenshot_temp_path(&screenshot_temp_path("other")));
+        assert!(!is_screenshot_temp_path(
+            &std::env::current_dir()
+                .unwrap()
+                .join("fanyifanyi-screen-1.png")
+        ));
+    }
+
+    #[test]
+    fn deletes_app_owned_screenshot_temp_file() {
+        let path = screenshot_temp_path("screen");
+        std::fs::write(&path, b"temporary screenshot").unwrap();
+
+        delete_screenshot_file(path.to_string_lossy().into_owned()).unwrap();
+        assert!(!path.exists());
+
+        delete_screenshot_file(path.to_string_lossy().into_owned()).unwrap();
+    }
+
+    #[test]
+    fn rejects_ocr_for_non_app_screenshot_paths() {
+        let err = recognize_screenshot_text(
+            std::env::current_dir()
+                .unwrap()
+                .join("fanyifanyi-screen-1.png")
+                .to_string_lossy()
+                .into_owned(),
+            ScreenRegion {
+                x: 0.0,
+                y: 0.0,
+                width: 10.0,
+                height: 10.0,
+            },
+            10.0,
+            10.0,
+        )
+        .unwrap_err();
+
+        assert_eq!(err, "截图临时文件路径无效");
     }
 
     #[test]
@@ -1192,8 +1584,10 @@ mod tests {
             "postgres://postgres.abc:secret@aws-0-us-east-1.pooler.supabase.com:6543/postgres?sslmode=disable"
         )
         .is_err());
-        assert!(validate_database_url("postgresql://postgres.example:h@example.invalid/postgres")
-            .is_err());
+        assert!(
+            validate_database_url("postgresql://postgres.example:h@example.invalid/postgres")
+                .is_err()
+        );
         assert!(validate_database_url("https://example.com/postgres").is_err());
         assert!(validate_database_url("not a url").is_err());
     }
