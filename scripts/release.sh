@@ -1,21 +1,41 @@
 #!/bin/bash
 
 # 一键发布脚本
-# 用法: ./scripts/release.sh 0.2.0
+# 用法:
+#   ./scripts/release.sh        # 自动递增 PATCH 版本
+#   ./scripts/release.sh 0.2.0  # 使用指定版本
 
 set -e
 
-VERSION=$1
+VERSION=${1:-}
+SEMVER_PATTERN='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
 
 if [ -z "$VERSION" ]; then
-  echo "❌ 错误: 请提供版本号"
-  echo "用法: $0 <version>"
-  echo "示例: $0 0.2.0"
-  exit 1
+  if ! command -v node &> /dev/null; then
+    echo "❌ 错误: 未找到 Node.js，无法从 package.json 读取当前版本"
+    exit 1
+  fi
+
+  if ! CURRENT_VERSION=$(node -p "require('./package.json').version" 2>/dev/null); then
+    echo "❌ 错误: 无法从 package.json 读取当前版本"
+    exit 1
+  fi
+
+  if ! [[ "$CURRENT_VERSION" =~ $SEMVER_PATTERN ]]; then
+    echo "❌ 错误: package.json 中的版本号格式不正确"
+    echo "自动递增要求稳定版本格式: MAJOR.MINOR.PATCH"
+    exit 1
+  fi
+
+  IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+  VERSION="${MAJOR}.${MINOR}.$((10#$PATCH + 1))"
+
+  echo "📝 未指定版本号，自动递增: ${CURRENT_VERSION} -> ${VERSION}"
+  echo ""
 fi
 
 # 验证版本号格式
-if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+if ! [[ "$VERSION" =~ $SEMVER_PATTERN ]]; then
   echo "❌ 错误: 版本号格式不正确"
   echo "必须符合语义化版本规范: MAJOR.MINOR.PATCH (例如: 0.2.0)"
   exit 1

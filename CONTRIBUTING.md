@@ -158,7 +158,8 @@ pnpm test:watch  # 监听模式
 维护者可以使用简化的发布脚本：
 
 ```bash
-./scripts/release.sh 0.2.0
+./scripts/release.sh        # 自动递增 PATCH 版本
+./scripts/release.sh 0.2.0  # 或指定版本
 ```
 
 这将自动：

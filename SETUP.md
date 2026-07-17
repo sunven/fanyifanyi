@@ -66,7 +66,8 @@
 git status
 
 # 2. 运行发布脚本
-./scripts/release.sh 0.1.1
+./scripts/release.sh        # 自动递增 PATCH 版本
+# ./scripts/release.sh 0.1.1  # 或指定版本
 
 # 3. 在提示时确认推送
 # 按 'y' 确认

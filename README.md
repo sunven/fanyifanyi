@@ -53,7 +53,8 @@ npx eslint .      # 运行 ESLint (@antfu 配置)
 ### 一键发布（推荐）
 
 ```bash
-./scripts/release.sh 0.2.0
+./scripts/release.sh        # 自动递增 PATCH 版本（例如 0.1.36 -> 0.1.37）
+./scripts/release.sh 0.2.0  # 或指定版本
 ```
 
 该脚本会自动：

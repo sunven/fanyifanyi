@@ -3,7 +3,8 @@
 ## 🚀 发布新版本（一键操作）
 
 ```bash
-./scripts/release.sh 0.2.0
+./scripts/release.sh        # 自动递增 PATCH 版本
+./scripts/release.sh 0.2.0  # 或指定版本
 ```
 
 就这么简单！脚本会自动处理所有事情。
@@ -88,7 +89,7 @@ pnpm tauri build      # 完整构建
 npx eslint .          # 运行 linter
 
 # 版本管理
-./scripts/release.sh 0.2.0   # 发布新版本
+./scripts/release.sh         # 自动递增 PATCH 版本并发布
 ```
 
 ## 📦 构建产物位置
@@ -146,4 +147,4 @@ pnpm tauri build
 
 ---
 
-**记住**：发布就是运行 `./scripts/release.sh <version>` 然后等待！✨
+**记住**：发布就是运行 `./scripts/release.sh`（或显式指定版本）然后等待！✨
