@@ -3,6 +3,9 @@ import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { cursorPosition, getCurrentWindow, monitorFromPoint } from '@tauri-apps/api/window'
 import { getTranslationSettingsLoaded } from './config'
 
+const SCREENSHOT_SELECTION_WINDOW_PREFIX = 'screenshot-selection-'
+const TRANSLATION_OVERLAY_WINDOW_PREFIX = 'translation-overlay-'
+
 export interface ScreenRegion {
   x: number
   y: number
@@ -59,6 +62,15 @@ export async function recognizeScreenshotText(
 
 export async function deleteScreenshotFile(imagePath: string) {
   return invoke<void>('delete_screenshot_file', { imagePath })
+}
+
+export async function destroyScreenshotWindows() {
+  const windows = await WebviewWindow.getAll()
+  const screenshotWindows = windows.filter(window =>
+    window.label.startsWith(SCREENSHOT_SELECTION_WINDOW_PREFIX)
+    || window.label.startsWith(TRANSLATION_OVERLAY_WINDOW_PREFIX))
+
+  await Promise.all(screenshotWindows.map(window => window.destroy().catch(() => undefined)))
 }
 
 export async function translateScreenshotText(text: string) {
@@ -118,7 +130,7 @@ export async function openScreenshotSelectionWindow() {
     logicalHeight: logicalSize.height,
   }
 
-  const label = `screenshot-selection-${Date.now()}`
+  const label = `${SCREENSHOT_SELECTION_WINDOW_PREFIX}${Date.now()}`
   const url = `/?window=screenshot-selection&${new URLSearchParams(
     Object.entries(params).map(([key, value]) => [key, String(value)]),
   ).toString()}`
@@ -150,7 +162,7 @@ export async function openScreenshotSelectionWindow() {
 }
 
 export async function openTranslationOverlay(payload: TranslationOverlayPayload) {
-  const label = `translation-overlay-${Date.now()}`
+  const label = `${TRANSLATION_OVERLAY_WINDOW_PREFIX}${Date.now()}`
   localStorage.setItem(`translation-overlay:${label}`, JSON.stringify({
     ...payload,
   }))

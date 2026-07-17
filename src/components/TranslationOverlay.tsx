@@ -25,7 +25,7 @@ export default function TranslationOverlay() {
   }
 
   return (
-    <div className="relative h-screen w-screen overflow-auto border border-slate-300 bg-white px-3 py-2 text-sm leading-6 text-slate-950 shadow-xl dark:border-slate-700 dark:bg-slate-950 dark:text-slate-50">
+    <div className="relative h-screen w-screen overflow-hidden border border-slate-300 bg-white px-3 py-2 text-sm leading-6 text-slate-950 shadow-xl dark:border-slate-700 dark:bg-slate-950 dark:text-slate-50">
       <Button
         size="icon"
         variant="ghost"
@@ -35,7 +35,7 @@ export default function TranslationOverlay() {
       >
         <X className="h-3.5 w-3.5" />
       </Button>
-      <div className="pr-7">
+      <div className="break-words pr-7">
         {payload.text}
       </div>
     </div>
