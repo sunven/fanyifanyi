@@ -28,6 +28,9 @@ const SECRETS_FILE_NAME: &str = "secrets.json";
 const SYNC_DATABASE_URL_KEY: &str = "sync:database_url";
 const SYNC_DATABASE_ACCEPT_INVALID_TLS_PARAM: &str = "sslaccept";
 const SYNC_DATABASE_ACCEPT_INVALID_TLS_VALUE: &str = "invalid";
+const GOOGLE_TRANSLATE_ENDPOINT: &str = "https://translate.googleapis.com/translate_a/single";
+const GOOGLE_MAX_RATE_LIMIT_RETRIES: usize = 2;
+const GOOGLE_MAX_RETRY_AFTER_SECS: u64 = 10;
 const MICROSOFT_TRANSLATOR_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36 Edg/124.0";
 
 #[derive(Debug, Serialize)]
@@ -1232,12 +1235,41 @@ async fn translate_with_google_target(
     text: String,
     target_language: &str,
 ) -> Result<String, String> {
+    translate_with_google_target_at_endpoint(text, target_language, GOOGLE_TRANSLATE_ENDPOINT).await
+}
+
+fn google_rate_limit_delay(headers: &reqwest::header::HeaderMap, retry_index: usize) -> Duration {
+    let retry_after_secs = headers
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok())
+        .map(|seconds| seconds.min(GOOGLE_MAX_RETRY_AFTER_SECS));
+
+    Duration::from_secs(retry_after_secs.unwrap_or(1_u64 << retry_index))
+}
+
+async fn wait_for_google_retry(delay: Duration) -> Result<(), String> {
+    if delay.is_zero() {
+        return Ok(());
+    }
+
+    tauri::async_runtime::spawn_blocking(move || std::thread::sleep(delay))
+        .await
+        .map_err(|error| format!("等待 Google 翻译重试失败: {error}"))
+}
+
+async fn translate_with_google_target_at_endpoint(
+    text: String,
+    target_language: &str,
+    endpoint: &str,
+) -> Result<String, String> {
     if text.trim().is_empty() {
         return Ok(String::new());
     }
 
     let url = format!(
-        "https://translate.googleapis.com/translate_a/single?client=gtx&dt=t&dj=1&ie=UTF-8&sl=auto&tl={}&q={}",
+        "{}?client=gtx&dt=t&dj=1&ie=UTF-8&sl=auto&tl={}&q={}",
+        endpoint,
         target_language,
         urlencoding::encode(&text)
     );
@@ -1246,43 +1278,64 @@ async fn translate_with_google_target(
         .build()
         .map_err(|error| format!("创建 Google 翻译客户端失败: {}", error))?;
 
-    let response = client
-        .get(&url)
-        .header("content-type", "application/json")
-        .send()
-        .await
-        .map_err(|error| {
-            if error.is_timeout() {
-                "Google 翻译超时，请检查网络连接".to_string()
-            } else if error.is_connect() {
+    for retry_index in 0..=GOOGLE_MAX_RATE_LIMIT_RETRIES {
+        let response = client
+            .get(&url)
+            .header("content-type", "application/json")
+            .send()
+            .await
+            .map_err(|error| {
+                if error.is_timeout() {
+                    "Google 翻译超时，请检查网络连接".to_string()
+                } else if error.is_connect() {
+                    format!(
+                        "连接 Google 翻译失败，请检查网络或代理设置。原始错误：{}",
+                        error
+                    )
+                } else {
+                    format!("发送 Google 翻译请求失败: {}", error)
+                }
+            })?;
+
+        let status = response.status();
+        if status == reqwest::StatusCode::TOO_MANY_REQUESTS
+            && retry_index < GOOGLE_MAX_RATE_LIMIT_RETRIES
+        {
+            let delay = google_rate_limit_delay(response.headers(), retry_index);
+            log::warn!(
+                "Google 翻译触发限流，{} 秒后进行第 {} 次重试",
+                delay.as_secs(),
+                retry_index + 1
+            );
+            wait_for_google_retry(delay).await?;
+            continue;
+        }
+
+        let response_text = response
+            .text()
+            .await
+            .map_err(|error| format!("读取 Google 翻译响应失败: {}", error))?;
+
+        if !status.is_success() {
+            let detail = response_detail(&response_text);
+            let prefix = if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
                 format!(
-                    "连接 Google 翻译失败，请检查网络或代理设置。原始错误：{}",
-                    error
+                    "Google 翻译请求过于频繁（HTTP 429，已自动重试 {} 次）",
+                    GOOGLE_MAX_RATE_LIMIT_RETRIES
                 )
             } else {
-                format!("发送 Google 翻译请求失败: {}", error)
+                format!("Google 翻译请求失败（HTTP {}）", status.as_u16())
+            };
+            if detail.is_empty() {
+                return Err(prefix);
             }
-        })?;
-
-    let status = response.status();
-    let response_text = response
-        .text()
-        .await
-        .map_err(|error| format!("读取 Google 翻译响应失败: {}", error))?;
-
-    if !status.is_success() {
-        let detail = response_detail(&response_text);
-        if detail.is_empty() {
-            return Err(format!("Google 翻译请求失败（HTTP {}）", status.as_u16()));
+            return Err(format!("{}：{}", prefix, detail));
         }
-        return Err(format!(
-            "Google 翻译请求失败（HTTP {}）：{}",
-            status.as_u16(),
-            detail
-        ));
+
+        return parse_google_translation(&response_text);
     }
 
-    parse_google_translation(&response_text)
+    unreachable!("Google 翻译重试循环必须返回结果")
 }
 
 #[tauri::command]
@@ -1457,7 +1510,16 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use std::io;
+    use std::{
+        io::{self, Read, Write},
+        net::TcpListener,
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        },
+        thread,
+        time::{Duration, Instant},
+    };
 
     use super::{
         database_config_from_url, database_connection_error_message, database_url_preview,
@@ -1465,10 +1527,70 @@ mod tests {
         normalize_openai_base_url, parse_google_translation, parse_microsoft_translation,
         recognize_screenshot_text, redact_database_error, screenshot_temp_path,
         screenshot_translate_prompt, sync_database_accepts_invalid_tls,
-        sync_database_root_cert_store, sync_upload_config_sql, validate_database_url,
-        validate_microsoft_token, vision_roi, ScreenRegion,
+        sync_database_root_cert_store, sync_upload_config_sql,
+        translate_with_google_target_at_endpoint, validate_database_url, validate_microsoft_token,
+        vision_roi, ScreenRegion,
     };
     use tokio_postgres::config::{Host, SslMode};
+
+    struct GoogleTestResponse {
+        status: &'static str,
+        retry_after_secs: Option<u64>,
+        body: &'static str,
+    }
+
+    fn run_google_translation_test(
+        responses: Vec<GoogleTestResponse>,
+    ) -> (Result<String, String>, usize) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let endpoint = format!(
+            "http://{}/translate_a/single",
+            listener.local_addr().unwrap()
+        );
+        let request_count = Arc::new(AtomicUsize::new(0));
+        let server_request_count = Arc::clone(&request_count);
+        let server = thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(1);
+            while server_request_count.load(Ordering::SeqCst) < responses.len()
+                && Instant::now() < deadline
+            {
+                match listener.accept() {
+                    Ok((mut stream, _)) => {
+                        let mut request = [0_u8; 4096];
+                        stream.read(&mut request).unwrap();
+                        let attempt = server_request_count.fetch_add(1, Ordering::SeqCst);
+                        let response = &responses[attempt];
+                        let retry_after = response
+                            .retry_after_secs
+                            .map(|seconds| format!("Retry-After: {seconds}\r\n"))
+                            .unwrap_or_default();
+                        write!(
+                            stream,
+                            "HTTP/1.1 {}\r\nContent-Length: {}\r\n{retry_after}Connection: close\r\n\r\n{}",
+                            response.status,
+                            response.body.len(),
+                            response.body
+                        )
+                        .unwrap();
+                    }
+                    Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                        thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(error) => panic!("测试服务器接收请求失败: {error}"),
+                }
+            }
+        });
+
+        let result = tauri::async_runtime::block_on(translate_with_google_target_at_endpoint(
+            "hello".to_string(),
+            "zh-CN",
+            &endpoint,
+        ));
+        server.join().unwrap();
+
+        (result, request_count.load(Ordering::SeqCst))
+    }
 
     #[test]
     fn keeps_provider_base_url_unchanged() {
@@ -1571,6 +1693,45 @@ mod tests {
         let response = r#"{"sentences":[{"trans":"你好！"},{"trans":"世界。"}],"src":"en"}"#;
 
         assert_eq!(parse_google_translation(response).unwrap(), "你好！ 世界。");
+    }
+
+    #[test]
+    fn retries_google_translation_after_rate_limit() {
+        let (result, request_count) = run_google_translation_test(vec![
+            GoogleTestResponse {
+                status: "429 Too Many Requests",
+                retry_after_secs: Some(0),
+                body: "rate limited",
+            },
+            GoogleTestResponse {
+                status: "200 OK",
+                retry_after_secs: None,
+                body: r#"{"sentences":[{"trans":"你好"}]}"#,
+            },
+        ]);
+
+        assert_eq!(request_count, 2);
+        assert_eq!(result.unwrap(), "你好");
+    }
+
+    #[test]
+    fn stops_retrying_google_translation_after_two_rate_limits() {
+        let rate_limit_response = || GoogleTestResponse {
+            status: "429 Too Many Requests",
+            retry_after_secs: Some(0),
+            body: "rate limited",
+        };
+        let (result, request_count) = run_google_translation_test(vec![
+            rate_limit_response(),
+            rate_limit_response(),
+            rate_limit_response(),
+        ]);
+
+        let error = result.unwrap_err();
+
+        assert_eq!(request_count, 3);
+        assert!(error.contains("HTTP 429"));
+        assert!(error.contains("已自动重试 2 次"));
     }
 
     #[test]
