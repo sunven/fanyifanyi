@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.37] - 2026-07-17
+
+### Bug Fixes
+
+- **storage**: Avoid macOS Keychain permission prompts
+- **translate**: Recover from transient Google rate limits
+- **screenshot**: Tie overlays to the main-window lifetime
+- **screenshot**: Prevent main-window flash before selection
+- **screenshot**: Keep translations visible in short overlays
+
+### Features
+
+- Add new agents for product management and feedback synthesis
+
+### Miscellaneous Tasks
+
+- **release**: Simplify routine patch releases
+
 ## [0.1.31] - 2026-05-09
 
 ### Features
