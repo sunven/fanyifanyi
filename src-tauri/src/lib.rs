@@ -7,20 +7,24 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use keyring::{Entry, Error as KeyringError};
 use rustls::{
     client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
     pki_types::{CertificateDer, ServerName, UnixTime},
     DigitallySignedStruct, Error as TlsError, SignatureScheme,
 };
 use serde::{Deserialize, Serialize};
+use tauri::Manager;
 use tauri_plugin_http::reqwest;
 use tauri_plugin_log::{Target, TargetKind};
 use tokio_postgres::{config::SslMode, Client, Config};
 use tokio_postgres_rustls::MakeRustlsConnect;
 use url::Url;
 
-const KEYRING_SERVICE: &str = "com.fanyifanyi.app";
+mod secret_store;
+
+use secret_store::FileSecretStore;
+
+const SECRETS_FILE_NAME: &str = "secrets.json";
 const SYNC_DATABASE_URL_KEY: &str = "sync:database_url";
 const SYNC_DATABASE_ACCEPT_INVALID_TLS_PARAM: &str = "sslaccept";
 const SYNC_DATABASE_ACCEPT_INVALID_TLS_VALUE: &str = "invalid";
@@ -75,44 +79,29 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
-fn ensure_keyring_store() -> Result<(), String> {
-    Ok(())
-}
-
-fn secure_entry(key: &str) -> Result<Entry, String> {
-    if key.trim().is_empty() {
-        return Err("安全存储 key 不能为空".to_string());
-    }
-
-    ensure_keyring_store()?;
-    Entry::new(KEYRING_SERVICE, key).map_err(|error| format!("打开安全存储失败: {:?}", error))
+#[tauri::command]
+fn secure_storage_get(
+    store: tauri::State<'_, FileSecretStore>,
+    key: String,
+) -> Result<Option<String>, String> {
+    store.get(&key)
 }
 
 #[tauri::command]
-fn secure_storage_get(key: String) -> Result<Option<String>, String> {
-    let entry = secure_entry(&key)?;
-    match entry.get_password() {
-        Ok(value) => Ok(Some(value)),
-        Err(KeyringError::NoEntry) => Ok(None),
-        Err(error) => Err(format!("读取安全存储失败: {:?}", error)),
-    }
+fn secure_storage_set(
+    store: tauri::State<'_, FileSecretStore>,
+    key: String,
+    value: String,
+) -> Result<(), String> {
+    store.set(&key, &value)
 }
 
 #[tauri::command]
-fn secure_storage_set(key: String, value: String) -> Result<(), String> {
-    let entry = secure_entry(&key)?;
-    entry
-        .set_password(&value)
-        .map_err(|error| format!("写入安全存储失败: {:?}", error))
-}
-
-#[tauri::command]
-fn secure_storage_remove(key: String) -> Result<(), String> {
-    let entry = secure_entry(&key)?;
-    match entry.delete_credential() {
-        Ok(()) | Err(KeyringError::NoEntry) => Ok(()),
-        Err(error) => Err(format!("删除安全存储失败: {:?}", error)),
-    }
+fn secure_storage_remove(
+    store: tauri::State<'_, FileSecretStore>,
+    key: String,
+) -> Result<(), String> {
+    store.remove(&key)
 }
 
 fn decode_url_component(value: &str) -> Result<String, String> {
@@ -231,8 +220,9 @@ fn sync_database_status_from_url(database_url: Option<&str>) -> SyncDatabaseStat
     }
 }
 
-fn stored_sync_database_url() -> Result<String, String> {
-    secure_storage_get(SYNC_DATABASE_URL_KEY.to_string())?
+fn stored_sync_database_url(store: &FileSecretStore) -> Result<String, String> {
+    store
+        .get(SYNC_DATABASE_URL_KEY)?
         .ok_or_else(|| "请先保存 Supabase 连接池 URL".to_string())
 }
 
@@ -517,29 +507,36 @@ fn sync_upload_config_sql() -> &'static str {
 }
 
 #[tauri::command]
-fn sync_database_status() -> Result<SyncDatabaseStatus, String> {
+fn sync_database_status(
+    store: tauri::State<'_, FileSecretStore>,
+) -> Result<SyncDatabaseStatus, String> {
     Ok(sync_database_status_from_url(
-        secure_storage_get(SYNC_DATABASE_URL_KEY.to_string())?.as_deref(),
+        store.get(SYNC_DATABASE_URL_KEY)?.as_deref(),
     ))
 }
 
 #[tauri::command]
-async fn sync_database_save_url(database_url: String) -> Result<SyncDatabaseStatus, String> {
+async fn sync_database_save_url(
+    store: tauri::State<'_, FileSecretStore>,
+    database_url: String,
+) -> Result<SyncDatabaseStatus, String> {
     let database_url = validate_database_url(&database_url)?;
     let client = connect_sync_database(&database_url).await?;
     ensure_sync_schema(&client).await?;
-    secure_storage_set(SYNC_DATABASE_URL_KEY.to_string(), database_url.clone())?;
+    store.set(SYNC_DATABASE_URL_KEY, &database_url)?;
     Ok(sync_database_status_from_url(Some(&database_url)))
 }
 
 #[tauri::command]
-fn sync_database_clear() -> Result<(), String> {
-    secure_storage_remove(SYNC_DATABASE_URL_KEY.to_string())
+fn sync_database_clear(store: tauri::State<'_, FileSecretStore>) -> Result<(), String> {
+    store.remove(SYNC_DATABASE_URL_KEY)
 }
 
 #[tauri::command]
-async fn sync_fetch_config() -> Result<Option<SyncRow>, String> {
-    let database_url = stored_sync_database_url()?;
+async fn sync_fetch_config(
+    store: tauri::State<'_, FileSecretStore>,
+) -> Result<Option<SyncRow>, String> {
+    let database_url = stored_sync_database_url(&store)?;
     let client = connect_sync_database(&database_url).await?;
     ensure_sync_schema(&client).await?;
 
@@ -573,9 +570,12 @@ async fn sync_fetch_config() -> Result<Option<SyncRow>, String> {
 }
 
 #[tauri::command]
-async fn sync_upload_config(payload: SyncPayloadPlaintext) -> Result<(), String> {
+async fn sync_upload_config(
+    store: tauri::State<'_, FileSecretStore>,
+    payload: SyncPayloadPlaintext,
+) -> Result<(), String> {
     validate_sync_payload(&payload)?;
-    let database_url = stored_sync_database_url()?;
+    let database_url = stored_sync_database_url(&store)?;
     let client = connect_sync_database(&database_url).await?;
     ensure_sync_schema(&client).await?;
     let plaintext =
@@ -1409,6 +1409,11 @@ async fn translate_with_microsoft_target(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .setup(|app| {
+            let path = app.path().app_data_dir()?.join(SECRETS_FILE_NAME);
+            app.manage(FileSecretStore::new(path));
+            Ok(())
+        })
         .plugin(
             tauri_plugin_log::Builder::new()
                 .targets([

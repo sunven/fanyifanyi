@@ -257,7 +257,7 @@ export function AccountSyncPanel({ configs, onImportConfig }: AccountSyncPanelPr
             <Badge variant={syncStatus === 'error' ? 'destructive' : 'secondary'}>{statusLabel}</Badge>
           </div>
           <p className="text-sm text-muted-foreground">
-            使用你自己的 Supabase 数据库连接池 URL 同步 AI 配置。URL 保存在系统安全存储中，不会显示密码。
+            使用你自己的 Supabase 数据库连接池 URL 同步 AI 配置。URL 会以未加密形式保存在应用本地数据目录中，不会在界面显示密码。
           </p>
           <p className="text-xs text-muted-foreground">
             推荐复制 Supabase Dashboard 的 Session pooler URI（通常端口 5432）；Transaction pooler 通常是 6543，也可以连接。
