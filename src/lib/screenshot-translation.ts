@@ -113,8 +113,9 @@ export async function openScreenshotSelectionWindow() {
       height: monitor.size.height,
     })
   }
-  finally {
+  catch (err) {
     await appWindow.show().catch(() => undefined)
+    throw err
   }
 
   const params: SelectionWindowParams = {
@@ -157,6 +158,7 @@ export async function openScreenshotSelectionWindow() {
   }
   catch (err) {
     await deleteScreenshotFile(capture.imagePath).catch(() => undefined)
+    await appWindow.show().catch(() => undefined)
     throw err
   }
 }

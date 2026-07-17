@@ -1,4 +1,5 @@
 import type { ScreenRegion } from '@/lib/screenshot-translation'
+import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -40,11 +41,19 @@ export default function ScreenshotSelection() {
 
   useEffect(() => {
     async function showWindow() {
-      if (!imagePath) {
-        setError('截图文件不存在')
+      try {
+        if (!imagePath) {
+          setError('截图文件不存在')
+        }
+        const selectionWindow = getCurrentWindow()
+        await selectionWindow.show()
+        const appWindow = await WebviewWindow.getByLabel('main')
+        await appWindow?.show()
+        await selectionWindow.setFocus()
       }
-      await getCurrentWindow().show()
-      await getCurrentWindow().setFocus()
+      catch (err) {
+        setError(err instanceof Error ? err.message : String(err))
+      }
     }
 
     void showWindow()
