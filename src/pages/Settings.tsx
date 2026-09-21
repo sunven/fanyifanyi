@@ -1,8 +1,7 @@
-import type { AIConfig, AIConfigs, TranslationProvider } from '@/lib/config'
+import type { AIConfig, TranslationProvider } from '@/lib/config'
 import { ArrowLeft, Bot, Eye, EyeOff, Info, Languages, RefreshCw } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
-import { AccountSyncPanel } from '@/components/AccountSyncPanel'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -34,7 +33,6 @@ import {
   getAllAIConfigs,
   loadAIConfigs,
   resetAIConfig,
-  saveAllAIConfigs,
   setActiveModel,
   setTranslationProvider,
   updateAIConfig,
@@ -161,11 +159,6 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
   // Set active model
   const refreshConfigs = async () => {
     setConfigs(await loadAIConfigs())
-  }
-
-  const handleImportConfig = async (nextConfigs: AIConfigs) => {
-    await saveAllAIConfigs(nextConfigs)
-    await refreshConfigs()
   }
 
   const handleSetActive = async (id: string) => {
@@ -358,9 +351,6 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
         <NonMacOnly>
           <h1 className="text-2xl font-bold">设置</h1>
         </NonMacOnly>
-        <AccountSyncPanel configs={configs} onImportConfig={handleImportConfig} />
-        <Separator />
-
         <div className="p-2">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div className="space-y-1">
@@ -447,7 +437,7 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
             <p className="text-sm text-blue-800 dark:text-blue-300">
               <strong>提示：</strong>
               {' '}
-              API Key 会以未加密形式保存在应用本地数据目录；配置 Supabase 连接池 URL 后会自动同步配置。点击模型卡片可切换使用的模型。
+              API Key 会以未加密形式保存在应用本地数据目录。点击模型卡片可切换使用的模型。
             </p>
           </div>
         </div>

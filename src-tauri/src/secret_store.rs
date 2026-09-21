@@ -164,13 +164,11 @@ mod tests {
     #[test]
     fn removes_secret() {
         let (store, path) = test_store();
-        store
-            .set("sync:database_url", "postgresql://example")
-            .unwrap();
+        store.set("api:test-key", "sk-example").unwrap();
 
-        store.remove("sync:database_url").unwrap();
+        store.remove("api:test-key").unwrap();
 
-        assert_eq!(store.get("sync:database_url").unwrap(), None);
+        assert_eq!(store.get("api:test-key").unwrap(), None);
         if path.exists() {
             std::fs::remove_file(path).unwrap();
         }

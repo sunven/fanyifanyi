@@ -60,6 +60,14 @@ describe('settings model configuration', () => {
     saveConfigWithApiKey()
   })
 
+  it('does not render the cloud config sync panel', async () => {
+    render(<Settings />)
+
+    expect(await screen.findByRole('heading', { name: '翻译引擎' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: '同步' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Supabase 连接池 URL')).not.toBeInTheDocument()
+  })
+
   it('keeps the API key visibility button next to the key value', async () => {
     render(<Settings />)
 
