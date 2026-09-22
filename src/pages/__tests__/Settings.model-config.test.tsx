@@ -195,19 +195,21 @@ describe('settings model configuration', () => {
     expect(card).not.toBeNull()
 
     fireEvent.click(within(card as HTMLElement).getByRole('button', { name: '编辑' }))
-    fireEvent.change(within(card as HTMLElement).getByDisplayValue('DeepSeek V3'), {
+    const dialog = await screen.findByRole('alertdialog')
+
+    fireEvent.change(within(dialog).getByDisplayValue('DeepSeek V3'), {
       target: { value: 'Edited Model' },
     })
-    fireEvent.change(within(card as HTMLElement).getByDisplayValue('ep-20251028141454-jlhp4'), {
+    fireEvent.change(within(dialog).getByDisplayValue('ep-20251028141454-jlhp4'), {
       target: { value: 'edited-model-id' },
     })
-    fireEvent.change(within(card as HTMLElement).getByDisplayValue('https://ark.cn-beijing.volces.com/api/v3'), {
+    fireEvent.change(within(dialog).getByDisplayValue('https://ark.cn-beijing.volces.com/api/v3'), {
       target: { value: 'https://edited.example.com/v1' },
     })
-    fireEvent.change(within(card as HTMLElement).getByDisplayValue('sk-test-key'), {
+    fireEvent.change(within(dialog).getByDisplayValue('sk-test-key'), {
       target: { value: 'sk-edited-key' },
     })
-    fireEvent.click(within(card as HTMLElement).getByRole('button', { name: '测试' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: '测试' }))
 
     await waitFor(() => expect(testAIConfig).toHaveBeenCalledTimes(1))
     expect(testAIConfig).toHaveBeenCalledWith(
@@ -220,7 +222,27 @@ describe('settings model configuration', () => {
       }),
       expect.any(AbortSignal),
     )
-    expect(within(card as HTMLElement).getByRole('status')).toHaveTextContent('测试通过')
+    expect(within(dialog).getByRole('status')).toHaveTextContent('测试通过')
+  })
+
+  it('saves edited model values from the dialog', async () => {
+    render(<Settings />)
+
+    const card = (await screen.findByText('DeepSeek V3')).closest('[data-slot="card"]')
+    expect(card).not.toBeNull()
+
+    fireEvent.click(within(card as HTMLElement).getByRole('button', { name: '编辑' }))
+    const dialog = await screen.findByRole('alertdialog')
+
+    fireEvent.change(within(dialog).getByDisplayValue('DeepSeek V3'), {
+      target: { value: 'Edited Model' },
+    })
+    fireEvent.click(within(dialog).getByRole('button', { name: '保存' }))
+
+    expect(await screen.findByRole('heading', { name: 'Edited Model' })).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+    })
   })
 
   it('switches the translation provider to Google', async () => {

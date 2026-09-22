@@ -1,5 +1,5 @@
 import type { AIConfig, TranslationProvider } from '@/lib/config'
-import { ArrowLeft, Bot, Eye, EyeOff, Info, Languages, RefreshCw } from 'lucide-react'
+import { ArrowLeft, Bot, Check, Eye, EyeOff, Info, Languages, Loader2, Pencil, Play, RefreshCw, Trash2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
 import {
@@ -101,6 +101,7 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
   const [saveError, setSaveError] = useState('')
   const [showSaveAlert, setShowSaveAlert] = useState(false)
   const [showNewApiKey, setShowNewApiKey] = useState(false)
+  const [showEditApiKey, setShowEditApiKey] = useState(false)
   const [testingModelId, setTestingModelId] = useState<string | null>(null)
   const [modelTestResults, setModelTestResults] = useState<Record<string, ModelTestResult>>({})
   const [appVersion, setAppVersion] = useState<string>('加载中...')
@@ -155,6 +156,12 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
     apiKey: '',
     model: 'gpt-4o-mini',
   })
+  const [editDraft, setEditDraft] = useState<Omit<AIConfig, 'id'>>({
+    name: '',
+    baseURL: '',
+    apiKey: '',
+    model: '',
+  })
 
   // Set active model
   const refreshConfigs = async () => {
@@ -177,27 +184,58 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
     }
   }
 
-  // Start editing
-  const handleEdit = (id: string) => {
-    setEditingId(id)
+  const clearModelTestResult = (id: string) => {
+    setModelTestResults((prev) => {
+      if (!(id in prev)) {
+        return prev
+      }
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
   }
 
-  // Save edit
-  const handleSaveEdit = async (id: string, updates: Partial<Omit<AIConfig, 'id'>>) => {
+  const handleEdit = (model: AIConfig) => {
+    setShowEditApiKey(false)
+    setEditDraft({
+      name: model.name,
+      baseURL: model.baseURL,
+      apiKey: model.apiKey,
+      model: model.model,
+    })
+    clearModelTestResult(getEditModelTestId(model.id))
+    setEditingId(model.id)
+  }
+
+  const handleEditDialogOpenChange = (open: boolean) => {
+    if (open) {
+      return
+    }
+    setShowEditApiKey(false)
+    if (editingId) {
+      clearModelTestResult(getEditModelTestId(editingId))
+    }
+    setEditingId(null)
+  }
+
+  const handleSaveEdit = async () => {
+    if (!editingId) {
+      return
+    }
+    if (!editDraft.name || !editDraft.baseURL || !editDraft.model) {
+      setSaveError('请填写所有必填字段')
+      setShowSaveAlert(true)
+      return
+    }
     try {
-      await updateAIConfig(id, updates)
+      await updateAIConfig(editingId, editDraft)
       await refreshConfigs()
-      setEditingId(null)
+      handleEditDialogOpenChange(false)
     }
     catch {
       setSaveError('保存失败，请重试')
       setShowSaveAlert(true)
     }
-  }
-
-  // Cancel edit
-  const handleCancelEdit = () => {
-    setEditingId(null)
   }
 
   // Add new model
@@ -286,6 +324,16 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
     void handleTestModel({
       id: NEW_MODEL_TEST_ID,
       ...newModel,
+    })
+  }
+
+  const handleTestEdit = () => {
+    if (!editingId) {
+      return
+    }
+    void handleTestModel({
+      id: getEditModelTestId(editingId),
+      ...editDraft,
     })
   }
 
@@ -411,41 +459,32 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
             ? (
                 <div className="space-y-2" aria-busy="true">
                   <p className="sr-only">正在加载模型配置...</p>
-                  <div className="h-24 animate-pulse rounded-lg bg-muted" />
-                  <div className="h-24 animate-pulse rounded-lg bg-muted" />
+                  <div className="h-12 animate-pulse rounded-lg bg-muted" />
+                  <div className="h-12 animate-pulse rounded-lg bg-muted" />
                 </div>
               )
             : (
-                <div className="space-y-2">
+                <div className="space-y-1.5">
                   {configs.models.map(model => (
                     <ModelCard
                       key={model.id}
                       model={model}
                       isActive={model.id === configs.activeModelId}
-                      isEditing={editingId === model.id}
                       onSetActive={handleSetActive}
                       onEdit={handleEdit}
-                      onSave={handleSaveEdit}
-                      onCancel={handleCancelEdit}
                       onDelete={() => setShowDeleteConfirm(model.id)}
                       onTest={handleTestModel}
                       isTesting={testingModelId === model.id}
                       isTestDisabled={testingModelId !== null}
                       testResult={modelTestResults[model.id]}
-                      isEditTesting={testingModelId === getEditModelTestId(model.id)}
-                      editTestResult={modelTestResults[getEditModelTestId(model.id)]}
                     />
                   ))}
                 </div>
               )}
 
-          <div className="mt-3 rounded-md border border-border bg-muted/70 p-3">
-            <p className="text-sm leading-relaxed text-foreground">
-              <strong>提示：</strong>
-              {' '}
-              API Key 会以未加密形式保存在应用本地数据目录。点击模型卡片可切换使用的模型。
-            </p>
-          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            API Key 以未加密形式保存在本机。
+          </p>
         </div>
         <Separator />
 
@@ -577,95 +616,37 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
         </div>
       </div>
 
-      {/* Add Model Dialog */}
-      <AlertDialog open={showAddDialog} onOpenChange={handleAddDialogOpenChange}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>添加新模型</AlertDialogTitle>
-            <AlertDialogDescription asChild>
-              <div className="space-y-4 mt-4">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-foreground">
-                      模型名称 *
-                    </label>
-                    <Input
-                      type="text"
-                      placeholder="GPT-4o Mini"
-                      value={newModel.name}
-                      onChange={e => setNewModel(prev => ({ ...prev, name: e.target.value }))}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-foreground">
-                      模型标识 *
-                    </label>
-                    <Input
-                      type="text"
-                      placeholder="gpt-4o-mini"
-                      value={newModel.model}
-                      onChange={e => setNewModel(prev => ({ ...prev, model: e.target.value }))}
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">
-                    API Base URL *
-                  </label>
-                  <Input
-                    type="text"
-                    placeholder="https://api.openai.com/v1"
-                    value={newModel.baseURL}
-                    onChange={e => setNewModel(prev => ({ ...prev, baseURL: e.target.value }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">
-                    API Key
-                  </label>
-                  <div className="relative">
-                    <Input
-                      type={showNewApiKey ? 'text' : 'password'}
-                      className="pr-10"
-                      placeholder="sk-..."
-                      value={newModel.apiKey}
-                      onChange={e => setNewModel(prev => ({ ...prev, apiKey: e.target.value }))}
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                      title={showNewApiKey ? '隐藏 API Key' : '显示 API Key'}
-                      aria-label={showNewApiKey ? '隐藏 API Key' : '显示 API Key'}
-                      onClick={() => setShowNewApiKey(prev => !prev)}
-                    >
-                      {showNewApiKey
-                        ? <EyeOff className="h-4 w-4" />
-                        : <Eye className="h-4 w-4" />}
-                    </Button>
-                  </div>
-                </div>
-                <ModelTestMessage result={modelTestResults[NEW_MODEL_TEST_ID]} />
-              </div>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleTestNewModel}
-              disabled={testingModelId !== null}
-            >
-              {testingModelId === NEW_MODEL_TEST_ID ? '测试中' : '测试'}
-            </Button>
-            <AlertDialogCancel onClick={() => handleAddDialogOpenChange(false)}>取消</AlertDialogCancel>
-            <AlertDialogAction onClick={handleAddModel}>
-              添加
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ModelFormDialog
+        open={showAddDialog}
+        title="添加新模型"
+        submitLabel="添加"
+        draft={newModel}
+        onDraftChange={setNewModel}
+        showApiKey={showNewApiKey}
+        onToggleApiKey={() => setShowNewApiKey(prev => !prev)}
+        testResult={modelTestResults[NEW_MODEL_TEST_ID]}
+        isTesting={testingModelId === NEW_MODEL_TEST_ID}
+        isTestDisabled={testingModelId !== null}
+        onOpenChange={handleAddDialogOpenChange}
+        onTest={handleTestNewModel}
+        onSubmit={handleAddModel}
+      />
+
+      <ModelFormDialog
+        open={editingId !== null}
+        title="编辑模型"
+        submitLabel="保存"
+        draft={editDraft}
+        onDraftChange={setEditDraft}
+        showApiKey={showEditApiKey}
+        onToggleApiKey={() => setShowEditApiKey(prev => !prev)}
+        testResult={editingId ? modelTestResults[getEditModelTestId(editingId)] : undefined}
+        isTesting={editingId !== null && testingModelId === getEditModelTestId(editingId)}
+        isTestDisabled={testingModelId !== null}
+        onOpenChange={handleEditDialogOpenChange}
+        onTest={handleTestEdit}
+        onSubmit={handleSaveEdit}
+      />
 
       {/* Delete Confirm Dialog */}
       <AlertDialog open={!!showDeleteConfirm} onOpenChange={() => setShowDeleteConfirm(null)}>
@@ -723,113 +704,88 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
   )
 }
 
-// Model Card Component
-interface ModelCardProps {
-  model: AIConfig
-  isActive: boolean
-  isEditing: boolean
-  onSetActive: (id: string) => void
-  onEdit: (id: string) => void
-  onSave: (id: string, updates: Partial<Omit<AIConfig, 'id'>>) => void
-  onCancel: () => void
-  onDelete: () => void
-  onTest: (model: AIConfig) => void
-  isTesting: boolean
-  isTestDisabled: boolean
-  testResult?: ModelTestResult
-  isEditTesting: boolean
-  editTestResult?: ModelTestResult
-}
-
-function ModelCard({
-  model,
-  isActive,
-  isEditing,
-  onSetActive,
-  onEdit,
-  onSave,
-  onCancel,
-  onDelete,
-  onTest,
+function ModelFormDialog({
+  open,
+  title,
+  submitLabel,
+  draft,
+  onDraftChange,
+  showApiKey,
+  onToggleApiKey,
+  testResult,
   isTesting,
   isTestDisabled,
-  testResult,
-  isEditTesting,
-  editTestResult,
-}: ModelCardProps) {
-  const [editForm, setEditForm] = useState(model)
-  const [showApiKey, setShowApiKey] = useState(false)
-
-  const handleSave = () => {
-    onSave(model.id, {
-      name: editForm.name,
-      baseURL: editForm.baseURL,
-      apiKey: editForm.apiKey,
-      model: editForm.model,
-    })
-    setShowApiKey(false)
-  }
-
-  const handleCancel = () => {
-    setShowApiKey(false)
-    onCancel()
-  }
-
-  const handleStartEdit = () => {
-    setShowApiKey(false)
-    onEdit(model.id)
-  }
-
-  const handleTestEdit = () => {
-    onTest({
-      ...editForm,
-      id: getEditModelTestId(model.id),
-    })
-  }
-
+  onOpenChange,
+  onTest,
+  onSubmit,
+}: {
+  open: boolean
+  title: string
+  submitLabel: string
+  draft: Omit<AIConfig, 'id'>
+  onDraftChange: (draft: Omit<AIConfig, 'id'>) => void
+  showApiKey: boolean
+  onToggleApiKey: () => void
+  testResult?: ModelTestResult
+  isTesting: boolean
+  isTestDisabled: boolean
+  onOpenChange: (open: boolean) => void
+  onTest: () => void
+  onSubmit: () => void
+}) {
   return (
-    <Card
-      className={`p-4 shadow-none transition-colors duration-200 ${
-        isActive ? 'border-primary bg-primary/6' : 'hover:border-foreground/25'
-      }`}
-    >
-      {isEditing
-        ? (
-            <div className="space-y-4">
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
+          <AlertDialogDescription asChild>
+            <div className="space-y-4 mt-4">
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">模型名称</label>
+                  <label className="text-sm font-medium text-foreground">
+                    模型名称 *
+                  </label>
                   <Input
                     type="text"
-                    value={editForm.name}
-                    onChange={e => setEditForm(prev => ({ ...prev, name: e.target.value }))}
+                    placeholder="GPT-4o Mini"
+                    value={draft.name}
+                    onChange={e => onDraftChange({ ...draft, name: e.target.value })}
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium">模型标识</label>
+                  <label className="text-sm font-medium text-foreground">
+                    模型标识 *
+                  </label>
                   <Input
                     type="text"
-                    value={editForm.model}
-                    onChange={e => setEditForm(prev => ({ ...prev, model: e.target.value }))}
+                    placeholder="gpt-4o-mini"
+                    value={draft.model}
+                    onChange={e => onDraftChange({ ...draft, model: e.target.value })}
                   />
                 </div>
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">API Base URL</label>
+                <label className="text-sm font-medium text-foreground">
+                  API Base URL *
+                </label>
                 <Input
                   type="text"
-                  value={editForm.baseURL}
-                  onChange={e => setEditForm(prev => ({ ...prev, baseURL: e.target.value }))}
+                  placeholder="https://api.openai.com/v1"
+                  value={draft.baseURL}
+                  onChange={e => onDraftChange({ ...draft, baseURL: e.target.value })}
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">API Key</label>
+                <label className="text-sm font-medium text-foreground">
+                  API Key
+                </label>
                 <div className="relative">
                   <Input
                     type={showApiKey ? 'text' : 'password'}
                     className="pr-10"
-                    value={editForm.apiKey}
-                    onChange={e => setEditForm(prev => ({ ...prev, apiKey: e.target.value }))}
+                    placeholder="sk-..."
+                    value={draft.apiKey}
+                    onChange={e => onDraftChange({ ...draft, apiKey: e.target.value })}
                   />
                   <Button
                     type="button"
@@ -838,7 +794,7 @@ function ModelCard({
                     className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                     title={showApiKey ? '隐藏 API Key' : '显示 API Key'}
                     aria-label={showApiKey ? '隐藏 API Key' : '显示 API Key'}
-                    onClick={() => setShowApiKey(prev => !prev)}
+                    onClick={onToggleApiKey}
                   >
                     {showApiKey
                       ? <EyeOff className="h-4 w-4" />
@@ -846,111 +802,175 @@ function ModelCard({
                   </Button>
                 </div>
               </div>
-              <ModelTestMessage result={editTestResult} />
-              <div className="flex gap-2 pt-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleTestEdit}
-                  disabled={isTestDisabled}
-                >
-                  {isEditTesting ? '测试中' : '测试'}
-                </Button>
-                <Button size="sm" onClick={handleSave}>
-                  保存
-                </Button>
-                <Button size="sm" variant="outline" onClick={handleCancel}>
-                  取消
-                </Button>
-              </div>
+              <ModelTestMessage result={testResult} />
             </div>
-          )
-        : (
-            <div>
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0 flex-1">
-                  <div className="mb-2 flex items-center gap-2">
-                    <h3 className="text-lg font-semibold tracking-tight">{model.name}</h3>
-                    {isActive && (
-                      <Badge variant="default" className="shrink-0 whitespace-nowrap">使用中</Badge>
-                    )}
-                  </div>
-                  <div className="space-y-1 text-sm text-muted-foreground">
-                    <p>
-                      <span className="font-medium">模型:</span>
-                      {' '}
-                      {model.model}
-                    </p>
-                    <p>
-                      <span className="font-medium">API:</span>
-                      {' '}
-                      {model.baseURL}
-                    </p>
-                    <div className="flex items-start gap-1">
-                      <span className="font-medium">Key:</span>
-                      {model.apiKey
-                        ? (
-                            <span className="inline-flex max-w-full items-center gap-1 align-top">
-                              <span className="min-w-0 break-all">
-                                {showApiKey ? model.apiKey : '••••••••'}
-                              </span>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="h-6 w-6 text-muted-foreground hover:text-foreground"
-                                title={showApiKey ? '隐藏 API Key' : '显示 API Key'}
-                                aria-label={showApiKey ? '隐藏 API Key' : '显示 API Key'}
-                                onClick={() => setShowApiKey(prev => !prev)}
-                              >
-                                {showApiKey
-                                  ? <EyeOff className="h-4 w-4" />
-                                  : <Eye className="h-4 w-4" />}
-                              </Button>
-                            </span>
-                          )
-                        : <span>未设置</span>}
-                    </div>
-                    <ModelTestMessage result={testResult} />
-                  </div>
-                </div>
-                <div className="flex flex-col gap-2">
-                  {!isActive && (
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onTest}
+            disabled={isTestDisabled}
+          >
+            {isTesting ? '测试中' : '测试'}
+          </Button>
+          <AlertDialogCancel>取消</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={(event) => {
+              event.preventDefault()
+              onSubmit()
+            }}
+          >
+            {submitLabel}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+}
+
+function formatEndpoint(baseURL: string) {
+  try {
+    const url = new URL(baseURL)
+    const path = url.pathname === '/' ? '' : url.pathname.replace(/\/$/, '')
+    return `${url.host}${path}`
+  }
+  catch {
+    return baseURL
+  }
+}
+
+interface ModelCardProps {
+  model: AIConfig
+  isActive: boolean
+  onSetActive: (id: string) => void
+  onEdit: (model: AIConfig) => void
+  onDelete: () => void
+  onTest: (model: AIConfig) => void
+  isTesting: boolean
+  isTestDisabled: boolean
+  testResult?: ModelTestResult
+}
+
+function ModelCard({
+  model,
+  isActive,
+  onSetActive,
+  onEdit,
+  onDelete,
+  onTest,
+  isTesting,
+  isTestDisabled,
+  testResult,
+}: ModelCardProps) {
+  const [showApiKey, setShowApiKey] = useState(false)
+  const endpoint = formatEndpoint(model.baseURL)
+
+  return (
+    <Card
+      className={`gap-0 px-3 py-2 shadow-none transition-colors duration-200 ${
+        isActive ? 'border-primary bg-primary/6' : 'hover:border-foreground/25'
+      }`}
+    >
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <h3 className="truncate text-sm font-medium tracking-tight">{model.name}</h3>
+            {isActive && (
+              <Badge className="h-5 shrink-0 px-1.5 py-0 text-[11px] font-medium leading-none">使用中</Badge>
+            )}
+          </div>
+          <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
+            {model.model !== model.name && (
+              <>
+                <span className="max-w-[40%] shrink-0 truncate" title={model.model}>
+                  {model.model}
+                </span>
+                <span aria-hidden="true">·</span>
+              </>
+            )}
+            <span className="min-w-0 truncate" title={model.baseURL}>
+              {endpoint}
+            </span>
+            <span aria-hidden="true">·</span>
+            {model.apiKey
+              ? (
+                  <span className="inline-flex shrink-0 items-center gap-0.5">
+                    <span className={showApiKey ? 'max-w-40 truncate' : undefined}>
+                      {showApiKey ? model.apiKey : '••••••••'}
+                    </span>
                     <Button
-                      size="sm"
-                      onClick={() => onSetActive(model.id)}
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="size-5 text-muted-foreground hover:text-foreground"
+                      title={showApiKey ? '隐藏 API Key' : '显示 API Key'}
+                      aria-label={showApiKey ? '隐藏 API Key' : '显示 API Key'}
+                      onClick={() => setShowApiKey(prev => !prev)}
                     >
-                      设为当前
+                      {showApiKey
+                        ? <EyeOff className="size-3.5" />
+                        : <Eye className="size-3.5" />}
                     </Button>
-                  )}
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => onTest(model)}
-                      disabled={isTestDisabled}
-                    >
-                      {isTesting ? '测试中' : '测试'}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={handleStartEdit}
-                    >
-                      编辑
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={onDelete}
-                    >
-                      删除
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </div>
+                  </span>
+                )
+              : <span className="shrink-0">Key 未设置</span>}
+          </div>
+          <ModelTestMessage result={testResult} />
+        </div>
+        <div className="flex shrink-0 items-center">
+          {!isActive && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-7 text-primary hover:bg-primary/10"
+              title="设为当前"
+              aria-label="设为当前"
+              onClick={() => onSetActive(model.id)}
+            >
+              <Check className="size-4" />
+            </Button>
           )}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-7 text-muted-foreground hover:text-foreground"
+            title={isTesting ? '测试中' : '测试'}
+            aria-label={isTesting ? '测试中' : '测试'}
+            onClick={() => onTest(model)}
+            disabled={isTestDisabled}
+          >
+            {isTesting
+              ? <Loader2 className="size-4 animate-spin" />
+              : <Play className="size-4" />}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-7 text-muted-foreground hover:text-foreground"
+            title="编辑"
+            aria-label="编辑"
+            onClick={() => onEdit(model)}
+          >
+            <Pencil className="size-4" />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="size-7 text-muted-foreground hover:text-destructive"
+            title="删除"
+            aria-label="删除"
+            onClick={onDelete}
+          >
+            <Trash2 className="size-4" />
+          </Button>
+        </div>
+      </div>
     </Card>
   )
 }
