@@ -45,7 +45,7 @@ function TabNavigation({ activeTab, setActiveTab, definitionsData, phrasesData, 
             role="tab"
             aria-selected={activeTab === tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`border-b-2 px-2.5 py-2 text-xs font-medium tracking-wide transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${activeTab === tab.id
+            className={`border-b-2 px-2.5 py-2 text-xs font-medium tracking-wide transition-colors duration-200 outline-none ${activeTab === tab.id
               ? 'border-primary text-primary'
               : 'border-transparent text-muted-foreground hover:text-foreground'
             }`}
