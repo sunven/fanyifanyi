@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 interface WindowTitleBarProps {
   children?: ReactNode
   title?: string
+  center?: ReactNode
   className?: string
   controlsPosition?: 'left' | 'right'
 }
@@ -18,7 +19,7 @@ function isMacPlatform() {
   return navigator.platform.toLowerCase().includes('mac')
 }
 
-export function WindowTitleBar({ children, title, className, controlsPosition = 'left' }: WindowTitleBarProps) {
+export function WindowTitleBar({ children, title, center, className, controlsPosition = 'left' }: WindowTitleBarProps) {
   if (!isMacPlatform()) {
     return null
   }
@@ -58,15 +59,27 @@ export function WindowTitleBar({ children, title, className, controlsPosition = 
           onMouseDown={handleDrag}
         />
         {controlsPosition === 'left' && controls}
-        <div
-          className={cn(
-            'pointer-events-none absolute inset-x-28 top-0 h-full min-w-0 select-none truncate text-center text-sm font-medium leading-10 tracking-tight',
-            controlsPosition === 'right' && 'hidden sm:block',
-          )}
-          data-tauri-drag-region="true"
-        >
-          {title}
-        </div>
+        {center
+          ? (
+              <div
+                data-testid="window-titlebar-center"
+                className="absolute top-1/2 left-1/2 z-10 -translate-x-1/2 -translate-y-1/2"
+                onMouseDown={event => event.stopPropagation()}
+              >
+                {center}
+              </div>
+            )
+          : (
+              <div
+                className={cn(
+                  'pointer-events-none absolute inset-x-28 top-0 h-full min-w-0 select-none truncate text-center text-sm font-medium leading-10 tracking-tight',
+                  controlsPosition === 'right' && 'hidden sm:block',
+                )}
+                data-tauri-drag-region="true"
+              >
+                {title}
+              </div>
+            )}
         <div
           className="h-full min-w-0 flex-1"
           data-tauri-drag-region="true"

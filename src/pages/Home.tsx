@@ -9,10 +9,19 @@ import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { UpdateToast } from '@/components/update-toast'
-import { TitleBarSpacer, WindowTitleBar } from '@/components/WindowTitleBar'
+import { NonMacOnly, TitleBarSpacer, WindowTitleBar } from '@/components/WindowTitleBar'
 import { useUpdate } from '@/contexts/UpdateContext'
 import { destroyScreenshotWindows, openScreenshotSelectionWindow } from '@/lib/screenshot-translation'
 import Settings from './Settings'
+
+function ModeSwitch() {
+  return (
+    <TabsList className="h-7">
+      <TabsTrigger value="translate" className="px-2.5 text-xs">翻译</TabsTrigger>
+      <TabsTrigger value="dict" className="px-2.5 text-xs">词典</TabsTrigger>
+    </TabsList>
+  )
+}
 
 export default function TranslationApp() {
   const [sourceText, setSourceText] = useState('')
@@ -104,39 +113,38 @@ export default function TranslationApp() {
         跳到正文
       </a>
       <div className="flex h-dvh flex-col" hidden={showSettings}>
-        <WindowTitleBar title="fanyifanyi" controlsPosition="right">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleScreenshotTranslation}
-            className="h-7 px-2 text-xs"
-          >
-            <ScanText className="h-4 w-4" />
-            截图翻译
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setShowSettings(true)}
-            className="h-7 px-2 text-xs"
-          >
-            <SettingsIcon className="h-4 w-4" />
-            AI 配置
-          </Button>
-        </WindowTitleBar>
-        <TitleBarSpacer />
-        {screenshotError && (
-          <div role="alert" className="mx-4 mt-3 rounded-md border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            {screenshotError}
-          </div>
-        )}
         <Tabs defaultValue="translate" className="flex min-h-0 flex-1 flex-col gap-0">
-          <div className="flex items-center px-4 pt-3">
-            <TabsList>
-              <TabsTrigger value="translate">翻译</TabsTrigger>
-              <TabsTrigger value="dict">词典</TabsTrigger>
-            </TabsList>
-          </div>
+          <WindowTitleBar controlsPosition="right" center={<ModeSwitch />}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleScreenshotTranslation}
+              className="h-7 px-2 text-xs"
+            >
+              <ScanText className="h-4 w-4" />
+              截图翻译
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowSettings(true)}
+              className="h-7 px-2 text-xs"
+            >
+              <SettingsIcon className="h-4 w-4" />
+              AI 配置
+            </Button>
+          </WindowTitleBar>
+          <TitleBarSpacer />
+          {screenshotError && (
+            <div role="alert" className="mx-4 mt-3 rounded-md border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {screenshotError}
+            </div>
+          )}
+          <NonMacOnly>
+            <div className="flex items-center px-4 pt-3">
+              <ModeSwitch />
+            </div>
+          </NonMacOnly>
           <div id="workspace" className="grid min-h-0 flex-1 grid-rows-[minmax(0,0.9fr)_minmax(0,1.1fr)] gap-3 overflow-hidden px-4 pt-3 pb-5 md:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)] md:grid-rows-1">
             <section className="flex min-h-0 flex-col gap-2">
               <div className="flex items-center justify-between">

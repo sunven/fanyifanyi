@@ -73,6 +73,29 @@ describe('window titlebar', () => {
     expect(controls.previousElementSibling).toHaveAttribute('aria-hidden', 'true')
   })
 
+  it('renders center content in place of the title and keeps clicks out of drag handling', () => {
+    setPlatform('MacIntel')
+    const handleMouseDown = vi.fn()
+
+    render(
+      <div onMouseDown={handleMouseDown}>
+        <WindowTitleBar center={<button type="button">翻译</button>}>
+          <button type="button">AI 配置</button>
+        </WindowTitleBar>
+      </div>,
+    )
+
+    const center = screen.getByTestId('window-titlebar-center')
+
+    expect(center).toHaveTextContent('翻译')
+    expect(center).toHaveClass('left-1/2')
+    expect(screen.queryByText('fanyifanyi')).not.toBeInTheDocument()
+
+    fireEvent.mouseDown(screen.getByRole('button', { name: '翻译' }))
+
+    expect(handleMouseDown).not.toHaveBeenCalled()
+  })
+
   it('places titlebar controls at the far right when requested', () => {
     setPlatform('MacIntel')
 

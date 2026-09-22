@@ -68,8 +68,14 @@ vi.mock('@/components/dictionary-display', () => ({
 }))
 
 vi.mock('@/components/WindowTitleBar', () => ({
-  WindowTitleBar: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  WindowTitleBar: ({ children, center }: { children?: ReactNode, center?: ReactNode }) => (
+    <div>
+      {center}
+      {children}
+    </div>
+  ),
   TitleBarSpacer: () => null,
+  NonMacOnly: () => null,
 }))
 
 vi.mock('../Settings', () => ({
