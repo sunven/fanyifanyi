@@ -145,7 +145,7 @@ export default function ScreenshotSelection() {
       )}
       {selection && (
         <div
-          className="absolute border border-white bg-sky-400/20 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]"
+          className="absolute border border-white bg-white/15 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]"
           style={{
             left: selection.x,
             top: selection.y,

@@ -330,7 +330,7 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
   }
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-dvh">
       <WindowTitleBar title="设置">
         {onBack && (
           <Button
@@ -349,14 +349,14 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
 
       <div className="p-4 max-w-4xl mx-auto space-y-6">
         <NonMacOnly>
-          <h1 className="text-2xl font-bold">设置</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-balance">设置</h1>
         </NonMacOnly>
         <div className="p-2">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div className="space-y-1">
               <div className="flex items-center gap-2">
-                <Languages className="h-5 w-5 text-blue-600" />
-                <h2 className="text-xl font-bold">翻译引擎</h2>
+                <Languages className="h-5 w-5 text-primary" />
+                <h2 className="text-lg font-semibold tracking-tight">翻译引擎</h2>
               </div>
               <p className="text-sm text-muted-foreground">
                 选择翻译时使用 AI 模型，或使用 Google 翻译接口。
@@ -388,8 +388,8 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
         <div className="p-2">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
-              <Bot className="h-5 w-5 text-blue-600" />
-              <h2 className="text-xl font-bold">AI 模型配置</h2>
+              <Bot className="h-5 w-5 text-primary" />
+              <h2 className="text-lg font-semibold tracking-tight">AI 模型配置</h2>
             </div>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={handleReset}>
@@ -408,7 +408,13 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
           </div>
 
           {isLoadingConfigs
-            ? <p className="text-sm text-muted-foreground">正在加载模型配置...</p>
+            ? (
+                <div className="space-y-2" aria-busy="true">
+                  <p className="sr-only">正在加载模型配置...</p>
+                  <div className="h-24 animate-pulse rounded-lg bg-muted" />
+                  <div className="h-24 animate-pulse rounded-lg bg-muted" />
+                </div>
+              )
             : (
                 <div className="space-y-2">
                   {configs.models.map(model => (
@@ -433,8 +439,8 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
                 </div>
               )}
 
-          <div className="mt-2 p-2 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-md">
-            <p className="text-sm text-blue-800 dark:text-blue-300">
+          <div className="mt-3 rounded-md border border-border bg-muted/70 p-3">
+            <p className="text-sm leading-relaxed text-foreground">
               <strong>提示：</strong>
               {' '}
               API Key 会以未加密形式保存在应用本地数据目录。点击模型卡片可切换使用的模型。
@@ -446,8 +452,8 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
         {/* About/Update Section */}
         <div className="p-2">
           <div className="flex items-center gap-2">
-            <Info className="h-5 w-5 text-blue-600" />
-            <h2 className="text-xl font-bold">关于</h2>
+            <Info className="h-5 w-5 text-primary" />
+            <h2 className="text-lg font-semibold tracking-tight">关于</h2>
           </div>
 
           <div className="space-y-2">
@@ -455,9 +461,9 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
             <div className="flex items-center justify-between pb-2">
               <div>
                 <h3 className="text-sm font-medium text-muted-foreground mb-1">当前版本</h3>
-                <p className="text-2xl font-bold">{appVersion}</p>
+                <p className="text-2xl font-semibold tracking-tight tabular-nums">{appVersion}</p>
               </div>
-              <Badge variant="secondary" className="text-sm">桌面应用</Badge>
+              <span className="text-xs tracking-wide text-muted-foreground">桌面应用</span>
             </div>
 
             {/* Update */}
@@ -482,7 +488,7 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
                     <p className="text-sm text-muted-foreground">当前已是最新版本</p>
                   )}
                   {!isDevMode && isDownloading && (
-                    <p className="text-sm text-blue-600 dark:text-blue-400">正在下载更新...</p>
+                    <p className="text-sm text-primary">正在下载更新...</p>
                   )}
                 </div>
                 <div className="flex gap-2">
@@ -580,7 +586,7 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
               <div className="space-y-4 mt-4">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                    <label className="text-sm font-medium text-foreground">
                       模型名称 *
                     </label>
                     <Input
@@ -591,7 +597,7 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                    <label className="text-sm font-medium text-foreground">
                       模型标识 *
                     </label>
                     <Input
@@ -603,7 +609,7 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                  <label className="text-sm font-medium text-foreground">
                     API Base URL *
                   </label>
                   <Input
@@ -614,7 +620,7 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                  <label className="text-sm font-medium text-foreground">
                     API Key
                   </label>
                   <div className="relative">
@@ -783,8 +789,8 @@ function ModelCard({
 
   return (
     <Card
-      className={`p-4 transition-all ${
-        isActive ? 'border-blue-500 border-2 bg-blue-50 dark:bg-blue-950/20' : 'hover:border-gray-400'
+      className={`p-4 shadow-none transition-colors duration-200 ${
+        isActive ? 'border-primary bg-primary/6' : 'hover:border-foreground/25'
       }`}
     >
       {isEditing
@@ -861,12 +867,12 @@ function ModelCard({
           )
         : (
             <div>
-              <div className="flex items-start justify-between">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 mb-2">
-                    <h3 className="text-lg font-semibold">{model.name}</h3>
+                  <div className="mb-2 flex items-center gap-2">
+                    <h3 className="text-lg font-semibold tracking-tight">{model.name}</h3>
                     {isActive && (
-                      <Badge variant="default" className="bg-blue-500">使用中</Badge>
+                      <Badge variant="default" className="shrink-0 whitespace-nowrap">使用中</Badge>
                     )}
                   </div>
                   <div className="space-y-1 text-sm text-muted-foreground">
@@ -917,7 +923,7 @@ function ModelCard({
                       设为当前
                     </Button>
                   )}
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <Button
                       size="sm"
                       variant="outline"

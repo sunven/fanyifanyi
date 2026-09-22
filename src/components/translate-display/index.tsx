@@ -3,7 +3,6 @@ import { useRef, useState } from 'react'
 import { useDebounce } from 'react-use'
 import { Streamdown } from 'streamdown'
 import CopyTextButton from '@/components/CopyText'
-import { Spinner } from '@/components/ui/spinner'
 import { translateStream } from '@/lib/ai'
 import { logger } from '@/lib/logger'
 
@@ -11,14 +10,27 @@ interface TranslateDisplayProps {
   q: string
 }
 
+function TranslationSkeleton() {
+  return (
+    <div className="space-y-3 pt-1" aria-hidden="true">
+      <div className="h-3 w-4/5 animate-pulse rounded-sm bg-muted" />
+      <div className="h-3 w-full animate-pulse rounded-sm bg-muted" />
+      <div className="h-3 w-11/12 animate-pulse rounded-sm bg-muted" />
+      <div className="h-3 w-2/3 animate-pulse rounded-sm bg-muted" />
+    </div>
+  )
+}
+
 export default function TranslateDisplay({ q }: TranslateDisplayProps) {
   const [translatedText, setTranslatedText] = useState('')
+  const [error, setError] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
   const abortControllerRef = useRef<AbortController | null>(null)
 
   const translateText = async () => {
     if (!q) {
       setTranslatedText('')
+      setError('')
       setIsStreaming(false)
       // 取消之前的翻译
       if (abortControllerRef.current) {
@@ -36,6 +48,7 @@ export default function TranslateDisplay({ q }: TranslateDisplayProps) {
     abortControllerRef.current = new AbortController()
 
     setIsStreaming(true)
+    setError('')
     setTranslatedText('')
     try {
       for await (const chunk of translateStream(q, abortControllerRef.current.signal)) {
@@ -51,9 +64,8 @@ export default function TranslateDisplay({ q }: TranslateDisplayProps) {
       if (error instanceof Error && error.name === 'AbortError') {
         return
       }
-      // 其他错误，先记录日志再抛出
       logger.error('翻译失败', error)
-      throw error
+      setError('翻译失败。请检查模型配置和网络后再试。')
     }
     finally {
       setIsStreaming(false)
@@ -71,39 +83,52 @@ export default function TranslateDisplay({ q }: TranslateDisplayProps) {
   )
 
   return (
-    <div className="flex flex-col h-full space-y-2 p-2">
-      <div className="flex justify-between items-center">
-        <label className="text-sm font-medium">翻译结果</label>
+    <div className="flex h-full flex-col gap-2 p-4">
+      <div className="flex items-center justify-between">
+        <label className="text-xs font-medium tracking-wide text-muted-foreground">翻译结果</label>
         <div className="flex items-center gap-1">
           <CopyTextButton text={translatedText} />
           {isStreaming && (
             <button
               type="button"
               onClick={handleStop}
-              className="p-1 text-muted-foreground hover:text-foreground transition-colors"
+              className="rounded-md p-1 text-muted-foreground transition-colors duration-200 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none active:scale-95"
               title="停止翻译"
             >
-              <StopCircle size={18} className="animate-spin" />
+              <StopCircle size={18} />
             </button>
           )}
         </div>
       </div>
-      <div className="flex-1 overflow-y-auto break-words prose prose-sm dark:prose-invert max-w-none pr-2">
+      <div className="prose prose-neutral dark:prose-invert max-w-none flex-1 overflow-y-auto pr-2 break-words prose-p:leading-relaxed prose-headings:tracking-tight">
+        {!q && !translatedText && !error
+          ? (
+              <p className="text-sm leading-relaxed text-pretty text-muted-foreground">
+                输入原文。停顿片刻后，译文会出现在这里。
+              </p>
+            )
+          : null}
+        {error
+          ? <p role="alert" className="text-sm text-destructive">{error}</p>
+          : null}
         {isStreaming && !translatedText
           ? (
-              <div className="flex items-center justify-center h-full text-muted-foreground">
-                <Spinner className="mr-2" />
-                <span>翻译中...</span>
+              <div aria-live="polite">
+                <p className="sr-only">翻译中</p>
+                <TranslationSkeleton />
               </div>
             )
-          : (
+          : null}
+        {translatedText
+          ? (
               <Streamdown
                 isAnimating={isStreaming}
                 controls={true}
               >
                 {translatedText}
               </Streamdown>
-            )}
+            )
+          : null}
       </div>
     </div>
   )

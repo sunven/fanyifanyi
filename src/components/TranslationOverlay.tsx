@@ -25,13 +25,13 @@ export default function TranslationOverlay() {
   }
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden border border-slate-300 bg-white p-0.5 text-xs leading-3 text-slate-950 shadow-xl dark:border-slate-700 dark:bg-slate-950 dark:text-slate-50">
+    <div className="relative h-screen w-screen overflow-hidden border border-border bg-background p-0.5 text-xs leading-3 text-foreground shadow-xl">
       <Button
         size="icon"
         variant="ghost"
         onClick={() => getCurrentWindow().destroy()}
         aria-label="关闭截图翻译"
-        className="absolute right-0.5 top-0.5 h-3 w-3 bg-white/80 dark:bg-slate-950/80"
+        className="absolute top-0.5 right-0.5 h-3 w-3 bg-background/80"
       >
         <X className="h-2.5 w-2.5" />
       </Button>

@@ -59,7 +59,10 @@ export function WindowTitleBar({ children, title, className, controlsPosition = 
         />
         {controlsPosition === 'left' && controls}
         <div
-          className="pointer-events-none absolute inset-x-28 top-0 h-full min-w-0 select-none truncate text-center text-sm font-semibold leading-10"
+          className={cn(
+            'pointer-events-none absolute inset-x-28 top-0 h-full min-w-0 select-none truncate text-center text-sm font-medium leading-10 tracking-tight',
+            controlsPosition === 'right' && 'hidden sm:block',
+          )}
           data-tauri-drag-region="true"
         >
           {title}

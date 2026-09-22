@@ -1,40 +1,40 @@
 interface SynonymsTabProps {
-
-  data: any[];
+  data: any[]
 }
 
-const SynonymsTab = ({ data }: SynonymsTabProps) => {
-
-
+function SynonymsTab({ data }: SynonymsTabProps) {
+  if (!data?.length) {
+    return <p className="py-6 text-sm leading-relaxed text-muted-foreground">没有同义词。</p>
+  }
 
   return (
-    <div className="space-y-2">
-      {data?.map((item, index) => {
-        const pos = item.syno.pos;
-        const translation = item.syno.tran;
-        const words = item.syno.ws;
+    <div className="space-y-4 py-2">
+      {data.map((item, index) => {
+        const pos = item.syno.pos
+        const translation = item.syno.tran
+        const words = item.syno.ws
 
         return (
-          <div key={index} className={`bg-gradient-to-r from-gray-50 to-indigo-50 p-2 rounded-md`}>
-            <h4 className="font-semibold text-gray-700 mb-2 flex gap-2 items-center">
-              <span className="text-blue-500">{pos}</span>
+          <div key={index}>
+            <h4 className="mb-2 flex items-baseline gap-2 text-sm font-medium text-foreground">
+              <span className="text-xs tracking-wide text-primary">{pos}</span>
               {translation}
             </h4>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-1.5">
               {words.map((wordObj: any, wordIndex: number) => (
                 <span
                   key={wordIndex}
-                  className={`p-2 rounded-md text-xs font-medium bg-gray-100 text-gray-800`}
+                  className="rounded-sm bg-muted px-2 py-1 text-xs font-medium text-foreground"
                 >
                   {wordObj.w}
                 </span>
               ))}
             </div>
           </div>
-        );
+        )
       })}
     </div>
-  );
-};
+  )
+}
 
-export default SynonymsTab;
+export default SynonymsTab

@@ -3,27 +3,24 @@ interface PhrasesTabProps {
 }
 
 function PhrasesTab({ data }: PhrasesTabProps) {
+  if (!data?.length) {
+    return <p className="py-6 text-sm leading-relaxed text-muted-foreground">没有常用短语。</p>
+  }
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-      {data?.map((item, index) => {
+    <ul className="divide-y divide-border">
+      {data.map((item, index) => {
         const phrase = item.phr.headword.l.i
         const translation = item.phr.trs[0].tr.l.i
 
         return (
-          <div
-            key={index}
-            className={`bg-gradient-to-r from-gray-50 to-gray-100 p-2 rounded-md `}
-          >
-            <div className="text-sm font-semibold text-gray-800">
-              {phrase}
-            </div>
-            <div className="text-xs text-gray-600">
-              {translation}
-            </div>
-          </div>
+          <li key={index} className="py-2.5">
+            <p className="text-sm font-medium text-foreground">{phrase}</p>
+            <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{translation}</p>
+          </li>
         )
       })}
-    </div>
+    </ul>
   )
 }
 

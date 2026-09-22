@@ -21,6 +21,6 @@ export default function CopyTextButton({ text }: any) {
     disabled={!text}
   >
     {copied ? <Check /> : <Copy />}
-    <span className="text-xs">{copied ? 'Copied' : 'Copy'}</span>
+    <span className="text-xs">{copied ? '已复制' : '复制'}</span>
   </Button>
 }

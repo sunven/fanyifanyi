@@ -97,7 +97,13 @@ export default function TranslationApp() {
 
   return (
     <>
-      <div className="flex flex-col h-screen" hidden={showSettings}>
+      <a
+        href="#workspace"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-12 focus:left-3 focus:z-40 focus:rounded-md focus:bg-primary focus:px-3 focus:py-2 focus:text-sm focus:text-primary-foreground"
+      >
+        跳到正文
+      </a>
+      <div className="flex h-dvh flex-col" hidden={showSettings}>
         <WindowTitleBar title="fanyifanyi" controlsPosition="right">
           <Button
             variant="ghost"
@@ -120,27 +126,28 @@ export default function TranslationApp() {
         </WindowTitleBar>
         <TitleBarSpacer />
         {screenshotError && (
-          <div className="mx-4 mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+          <div role="alert" className="mx-4 mt-3 rounded-md border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive">
             {screenshotError}
           </div>
         )}
-        <Tabs defaultValue="translate" className="flex flex-col h-full">
-          <div className="flex justify-center items-center p-1">
+        <Tabs defaultValue="translate" className="flex min-h-0 flex-1 flex-col gap-0">
+          <div className="flex items-center px-4 pt-3">
             <TabsList>
               <TabsTrigger value="translate">翻译</TabsTrigger>
               <TabsTrigger value="dict">词典</TabsTrigger>
             </TabsList>
           </div>
-          <div className="flex gap-2 flex-1 overflow-hidden px-4 pb-4">
-            <div className="w-[350px] flex flex-col space-y-2">
-              <div className="flex justify-between items-center">
-                <label className="text-sm font-medium">源文本</label>
+          <div id="workspace" className="grid min-h-0 flex-1 grid-rows-[minmax(0,0.9fr)_minmax(0,1.1fr)] gap-3 overflow-hidden px-4 pt-3 pb-5 md:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)] md:grid-rows-1">
+            <section className="flex min-h-0 flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <label htmlFor="source-text" className="text-xs font-medium tracking-wide text-muted-foreground">源文本</label>
                 <CopyTextButton text={sourceText} />
               </div>
-              <div className="relative flex-1 p-1">
+              <div className="relative min-h-0 flex-1">
                 <Textarea
+                  id="source-text"
                   placeholder="输入要翻译的文本..."
-                  className="resize-none h-full field-sizing-fixed overflow-y-auto"
+                  className="h-full resize-none overflow-y-auto bg-card/80 text-base leading-7 field-sizing-fixed md:text-base"
                   value={sourceText}
                   onChange={e => setSourceText(e.target.value)}
                 />
@@ -149,20 +156,21 @@ export default function TranslationApp() {
                     type="button"
                     variant="ghost"
                     size="sm"
-                    className="absolute top-2 right-2 h-6 w-6 p-0 bg-background/80 backdrop-blur-sm border"
+                    aria-label="清空源文本"
+                    className="absolute top-2 right-2 h-6 w-6 border bg-background/80 p-0 backdrop-blur-sm"
                     onClick={() => { setSourceText('') }}
                   >
                     <X className="h-4 w-4" />
                   </Button>
                 )}
               </div>
-            </div>
-            <div className="flex-1 flex flex-col overflow-hidden">
-              <TabsContent value="translate" className="flex-1 overflow-hidden">
+            </section>
+            <section className="flex min-h-0 flex-col overflow-hidden rounded-lg bg-card shadow-[0_1px_0_oklch(0.35_0.02_55/0.05),0_18px_36px_-28px_oklch(0.32_0.04_40/0.55)]">
+              <TabsContent value="translate" className="min-h-0 flex-1 overflow-hidden">
                 <TranslateDisplay q={sourceText} />
               </TabsContent>
-              <TabsContent value="dict" className="flex-1 overflow-hidden"><DictionaryDisplay q={sourceText} /></TabsContent>
-            </div>
+              <TabsContent value="dict" className="min-h-0 flex-1 overflow-hidden"><DictionaryDisplay q={sourceText} /></TabsContent>
+            </section>
           </div>
         </Tabs>
         {toastVersion && (
