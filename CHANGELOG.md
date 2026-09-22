@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.39] - 2026-09-22
+
+### Features
+
+- Add skill
+
+## [0.1.38] - 2026-07-19
+
+### Miscellaneous Tasks
+
+- Update package manager and adjust workspace configuration
+
 ## [0.1.37] - 2026-07-17
 
 ### Bug Fixes
