@@ -1,4 +1,4 @@
-import type { AIConfig, TranslationProvider } from '@/lib/config'
+import type { AIConfig, AIConfigs, TranslationProvider } from '@/lib/config'
 import { ArrowLeft, Bot, Check, Eye, EyeOff, Info, Languages, Loader2, Pencil, Play, RefreshCw, Trash2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
@@ -29,8 +29,8 @@ import { getCurrentVersion, useUpdate } from '@/contexts/UpdateContext'
 import { testAIConfig } from '@/lib/ai'
 import {
   addAIConfig,
+  DEFAULT_CONFIG,
   deleteAIConfig,
-  getAllAIConfigs,
   loadAIConfigs,
   resetAIConfig,
   setActiveModel,
@@ -93,7 +93,11 @@ function getModelTestErrorMessage(error: unknown) {
 }
 
 export default function Settings({ onBack, initialSection }: SettingsProps) {
-  const [configs, setConfigs] = useState(() => getAllAIConfigs())
+  const [configs, setConfigs] = useState<AIConfigs>(() => ({
+    activeModelId: DEFAULT_CONFIG.activeModelId,
+    translationProvider: DEFAULT_CONFIG.translationProvider,
+    models: DEFAULT_CONFIG.models.map(model => ({ ...model })),
+  }))
   const [editingId, setEditingId] = useState<string | null>(null)
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null)

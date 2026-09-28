@@ -543,13 +543,23 @@ async fn test_ai_config(base_url: String, api_key: String, model: String) -> Res
     Ok(())
 }
 
+fn stored_model_api_key(store: &FileSecretStore, model_id: &str) -> Result<String, String> {
+    let key = format!("ai-config:model:{model_id}:apiKey");
+    match store.get(&key)? {
+        Some(value) if !value.trim().is_empty() => Ok(value),
+        _ => Err("请先填写 API Key".to_string()),
+    }
+}
+
 #[tauri::command]
 async fn translate_with_ai(
+    store: tauri::State<'_, FileSecretStore>,
     base_url: String,
-    api_key: String,
     model: String,
+    model_id: String,
     prompt: String,
 ) -> Result<String, String> {
+    let api_key = stored_model_api_key(store.inner(), &model_id)?;
     let (base_url, api_key, model) = validate_ai_request_config(base_url, api_key, model)?;
     if prompt.trim().is_empty() {
         return Ok(String::new());
@@ -896,16 +906,16 @@ mod tests {
             Arc,
         },
         thread,
-        time::{Duration, Instant},
+        time::{Duration, Instant, SystemTime, UNIX_EPOCH},
     };
 
     use super::{
         delete_screenshot_file, is_screenshot_temp_path, normalize_openai_base_url,
         parse_google_translation, parse_microsoft_translation, recognize_screenshot_text,
-        screenshot_temp_path, translate_with_google_target_at_endpoint, validate_microsoft_token,
-        vision_roi,
-        ScreenRegion,
+        screenshot_temp_path, stored_model_api_key, translate_with_google_target_at_endpoint,
+        validate_microsoft_token, vision_roi, ScreenRegion,
     };
+    use crate::secret_store::FileSecretStore;
 
     struct GoogleTestResponse {
         status: &'static str,
@@ -964,6 +974,44 @@ mod tests {
         server.join().unwrap();
 
         (result, request_count.load(Ordering::SeqCst))
+    }
+
+    #[test]
+    fn translate_with_ai_reads_the_saved_model_key() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "fanyifanyi-translate-key-{}-{unique}.json",
+            std::process::id()
+        ));
+        let store = FileSecretStore::new(path.clone());
+
+        assert_eq!(
+            stored_model_api_key(&store, "model-1").unwrap_err(),
+            "请先填写 API Key"
+        );
+
+        store
+            .set("ai-config:model:model-1:apiKey", "sk-saved")
+            .unwrap();
+        assert_eq!(
+            stored_model_api_key(&store, "model-1").unwrap(),
+            "sk-saved"
+        );
+
+        store
+            .set("ai-config:model:model-1:apiKey", "  ")
+            .unwrap();
+        assert_eq!(
+            stored_model_api_key(&store, "model-1").unwrap_err(),
+            "请先填写 API Key"
+        );
+
+        if path.exists() {
+            std::fs::remove_file(path).unwrap();
+        }
     }
 
     #[test]

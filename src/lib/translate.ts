@@ -1,6 +1,6 @@
-import type { AIConfig, TranslationProvider } from './config'
+import type { TranslationSettings } from './config'
 import { invoke } from '@tauri-apps/api/core'
-import { getTranslationSettingsLoaded } from './config'
+import { loadTranslationSettings } from './config'
 import { logger } from './logger'
 
 export type TranslationKind = 'desk' | 'screenshot'
@@ -63,20 +63,19 @@ ${text}
 async function requestTranslation(
   text: string,
   kind: TranslationKind,
-  aiConfig: AIConfig,
-  provider: TranslationProvider,
+  settings: TranslationSettings,
 ) {
-  if (provider === 'ai') {
+  if (settings.provider === 'ai') {
     return invoke<string>('translate_with_ai', {
-      baseUrl: aiConfig.baseURL,
-      apiKey: aiConfig.apiKey,
-      model: aiConfig.model,
+      baseUrl: settings.baseURL,
+      model: settings.model,
+      modelId: settings.modelId,
       prompt: kind === 'desk' ? deskTranslationPrompt(text) : screenshotTranslationPrompt(text),
     })
   }
 
   return invoke<string>(
-    provider === 'google' ? 'translate_with_google' : 'translate_with_microsoft',
+    settings.provider === 'google' ? 'translate_with_google' : 'translate_with_microsoft',
     {
       text,
       targetLanguage: kind === 'screenshot' ? 'zh-CN' : deskTargetLanguage(text),
@@ -96,13 +95,13 @@ export async function translate(
     return ''
   }
 
-  const { aiConfig, provider } = await getTranslationSettingsLoaded()
+  const settings = await loadTranslationSettings()
   if (signal?.aborted) {
     throw cancelledTranslation()
   }
 
   try {
-    const content = await requestTranslation(text, kind, aiConfig, provider)
+    const content = await requestTranslation(text, kind, settings)
     if (signal?.aborted) {
       throw cancelledTranslation()
     }

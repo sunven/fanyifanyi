@@ -46,7 +46,7 @@ vi.mock('@tauri-apps/api/webviewWindow', () => ({
 }))
 
 vi.mock('../config', () => ({
-  getTranslationSettingsLoaded: vi.fn(),
+  loadTranslationSettings: vi.fn(),
 }))
 
 describe('screenshot selection window order', () => {

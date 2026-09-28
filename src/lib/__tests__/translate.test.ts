@@ -1,22 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { translate } from '../translate'
 
-const { config, getTranslationSettingsLoaded, invoke } = vi.hoisted(() => {
-  const config = {
-    id: 'model-1',
-    name: 'DeepSeek V3',
+const { invoke, loadTranslationSettings, settings } = vi.hoisted(() => {
+  const settings = {
+    provider: 'ai' as const,
+    modelId: 'model-1',
     baseURL: 'https://ark.cn-beijing.volces.com/api/v3',
-    apiKey: 'sk-test-key',
     model: 'ep-20251028141454-jlhp4',
   }
 
   return {
-    config,
-    getTranslationSettingsLoaded: vi.fn(() => Promise.resolve({
-      aiConfig: config,
-      provider: 'ai' as const,
-    })),
     invoke: vi.fn(),
+    loadTranslationSettings: vi.fn(() => Promise.resolve(settings)),
+    settings,
   }
 })
 
@@ -34,17 +30,14 @@ vi.mock('../config', async (importOriginal) => {
   const original = await importOriginal<typeof import('../config')>()
   return {
     ...original,
-    getTranslationSettingsLoaded,
+    loadTranslationSettings,
   }
 })
 
 describe('translate', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    getTranslationSettingsLoaded.mockResolvedValue({
-      aiConfig: config,
-      provider: 'ai',
-    })
+    loadTranslationSettings.mockResolvedValue(settings)
     invoke.mockResolvedValue('你好！')
   })
 
@@ -59,18 +52,19 @@ describe('translate', () => {
 
     expect(invoke).toHaveBeenCalledWith('translate_with_ai', {
       baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
-      apiKey: 'sk-test-key',
       model: 'ep-20251028141454-jlhp4',
+      modelId: 'model-1',
       prompt: expect.stringContaining('Hello!'),
     })
+    expect(invoke.mock.calls[0][1]).not.toHaveProperty('apiKey')
     const prompt = invoke.mock.calls[0][1].prompt as string
     expect(prompt).toContain('中英互译')
     expect(prompt).toContain('若待翻译文本为中文，则将其翻译成英文')
   })
 
   it('asks Google for English when desk text contains CJK', async () => {
-    getTranslationSettingsLoaded.mockResolvedValue({
-      aiConfig: config,
+    loadTranslationSettings.mockResolvedValue({
+      ...settings,
       provider: 'google',
     })
 
@@ -83,8 +77,8 @@ describe('translate', () => {
   })
 
   it('asks Google for Chinese when desk text has no CJK', async () => {
-    getTranslationSettingsLoaded.mockResolvedValue({
-      aiConfig: config,
+    loadTranslationSettings.mockResolvedValue({
+      ...settings,
       provider: 'google',
     })
 
@@ -97,8 +91,8 @@ describe('translate', () => {
   })
 
   it('uses the same desk target language for Microsoft', async () => {
-    getTranslationSettingsLoaded.mockResolvedValue({
-      aiConfig: config,
+    loadTranslationSettings.mockResolvedValue({
+      ...settings,
       provider: 'microsoft',
     })
 
@@ -121,8 +115,8 @@ describe('translate', () => {
   })
 
   it('asks Google and Microsoft for Chinese during screenshot translation', async () => {
-    getTranslationSettingsLoaded.mockResolvedValue({
-      aiConfig: config,
+    loadTranslationSettings.mockResolvedValue({
+      ...settings,
       provider: 'google',
     })
     await translate('Hello!', 'screenshot')
@@ -132,8 +126,8 @@ describe('translate', () => {
     })
 
     invoke.mockClear()
-    getTranslationSettingsLoaded.mockResolvedValue({
-      aiConfig: config,
+    loadTranslationSettings.mockResolvedValue({
+      ...settings,
       provider: 'microsoft',
     })
     await translate('Hello!', 'screenshot')
