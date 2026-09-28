@@ -12,8 +12,8 @@ import {
   readSelectionWindowParams,
   recognizeScreenshotText,
   screenshotImageSrc,
-  translateScreenshotText,
 } from '@/lib/screenshot-translation'
+import { translate } from '@/lib/translate'
 
 function normalizeSelection(startX: number, startY: number, endX: number, endY: number): ScreenRegion {
   return {
@@ -95,7 +95,7 @@ export default function ScreenshotSelection() {
         params.screenWidth,
         params.screenHeight,
       )
-      const translatedText = await translateScreenshotText(recognizedText)
+      const translatedText = await translate(recognizedText, 'screenshot')
       await openTranslationOverlay({
         ...logicalOverlayRect(selection, params),
         text: translatedText,

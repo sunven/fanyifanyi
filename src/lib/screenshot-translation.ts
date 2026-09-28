@@ -1,7 +1,6 @@
 import { convertFileSrc, invoke } from '@tauri-apps/api/core'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { cursorPosition, getCurrentWindow, monitorFromPoint } from '@tauri-apps/api/window'
-import { getTranslationSettingsLoaded } from './config'
 
 const SCREENSHOT_SELECTION_WINDOW_PREFIX = 'screenshot-selection-'
 const TRANSLATION_OVERLAY_WINDOW_PREFIX = 'translation-overlay-'
@@ -71,24 +70,6 @@ export async function destroyScreenshotWindows() {
     || window.label.startsWith(TRANSLATION_OVERLAY_WINDOW_PREFIX))
 
   await Promise.all(screenshotWindows.map(window => window.destroy().catch(() => undefined)))
-}
-
-export async function translateScreenshotText(text: string) {
-  const { aiConfig, provider } = await getTranslationSettingsLoaded()
-
-  if (provider === 'ai') {
-    return invoke<string>('translate_text_to_chinese', {
-      baseUrl: aiConfig.baseURL,
-      apiKey: aiConfig.apiKey,
-      model: aiConfig.model,
-      text,
-    })
-  }
-
-  return invoke<string>(
-    provider === 'google' ? 'translate_with_google_to_chinese' : 'translate_with_microsoft_to_chinese',
-    { text },
-  )
 }
 
 export async function openScreenshotSelectionWindow() {

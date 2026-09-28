@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Home from '../Home'
 
-const { translateStream, updateState } = vi.hoisted(() => {
+const { translate, updateState } = vi.hoisted(() => {
   const updateState = {
     hasUpdate: false,
     updateInfo: null,
@@ -22,13 +22,13 @@ const { translateStream, updateState } = vi.hoisted(() => {
   }
 
   return {
-    translateStream: vi.fn(),
+    translate: vi.fn(),
     updateState,
   }
 })
 
-vi.mock('@/lib/ai', () => ({
-  translateStream,
+vi.mock('@/lib/translate', () => ({
+  translate,
 }))
 
 vi.mock('@/components/CopyText', () => ({
@@ -77,9 +77,7 @@ vi.mock('@/contexts/UpdateContext', () => {
 describe('home settings navigation', () => {
   beforeEach(() => {
     vi.useFakeTimers()
-    translateStream.mockImplementation(async function* () {
-      yield 'translated text'
-    })
+    translate.mockResolvedValue('translated text')
   })
 
   afterEach(() => {
@@ -97,7 +95,7 @@ describe('home settings navigation', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1000)
     })
-    expect(translateStream).toHaveBeenCalledTimes(1)
+    expect(translate).toHaveBeenCalledTimes(1)
 
     fireEvent.click(screen.getByRole('button', { name: /AI 配置/ }))
     expect(screen.getByRole('heading', { name: '设置' })).toBeInTheDocument()
@@ -109,6 +107,6 @@ describe('home settings navigation', () => {
     })
 
     expect(screen.getByPlaceholderText('输入要翻译的文本...')).toHaveValue('hello')
-    expect(translateStream).toHaveBeenCalledTimes(1)
+    expect(translate).toHaveBeenCalledTimes(1)
   })
 })

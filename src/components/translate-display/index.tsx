@@ -3,8 +3,8 @@ import { useRef, useState } from 'react'
 import { useDebounce } from 'react-use'
 import { Streamdown } from 'streamdown'
 import CopyTextButton from '@/components/CopyText'
-import { translateStream } from '@/lib/ai'
 import { logger } from '@/lib/logger'
+import { translate } from '@/lib/translate'
 
 interface TranslateDisplayProps {
   q: string
@@ -51,13 +51,8 @@ export default function TranslateDisplay({ q }: TranslateDisplayProps) {
     setError('')
     setTranslatedText('')
     try {
-      for await (const chunk of translateStream(q, abortControllerRef.current.signal)) {
-        // 如果已取消，退出循环
-        if (abortControllerRef.current.signal.aborted) {
-          break
-        }
-        setTranslatedText(prev => prev + chunk)
-      }
+      const translated = await translate(q, 'desk', abortControllerRef.current.signal)
+      setTranslatedText(translated)
     }
     catch (error) {
       // 如果是 AbortError，忽略它

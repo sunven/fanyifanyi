@@ -411,56 +411,6 @@ fn recognize_screenshot_text_impl(
     Err("截图翻译第一版仅支持 macOS".to_string())
 }
 
-fn translate_prompt(text: &str) -> String {
-    format!(
-        "你的任务是自动判断待翻译文本的语言并进行中英互译。若待翻译文本为中文，则将其翻译成英文；若待翻译文本为英文，则将其翻译成中文。请仔细阅读以下信息，并完成翻译。\n\n\
-待翻译文本:\n\
-<text>\n\
-{}\n\
-</text>\n\n\
-在进行翻译时，请遵循以下指南:\n\
-1. 确保翻译准确传达原文的意思。\n\
-2. 尽量使用自然、流畅的表达方式。\n\
-3. 注意语法和拼写的正确性。\n\n\
-请直接输出翻译结果，不需要添加任何标签或说明。",
-        text
-    )
-}
-
-fn screenshot_translate_prompt(text: &str) -> String {
-    format!(
-        "你的任务是把截图 OCR 得到的英文文本翻译成中文。请只输出中文译文，不要解释、不要添加标签。\n\n\
-英文文本:\n\
-<text>\n\
-{}\n\
-</text>",
-        text
-    )
-}
-
-fn contains_cjk(text: &str) -> bool {
-    text.chars().any(|ch| {
-        matches!(
-            ch as u32,
-            0x3400..=0x4DBF
-                | 0x4E00..=0x9FFF
-                | 0xF900..=0xFAFF
-                | 0x20000..=0x2A6DF
-                | 0x2A700..=0x2B73F
-                | 0x2B740..=0x2B81F
-                | 0x2B820..=0x2CEAF
-        )
-    })
-}
-
-fn google_target_language(text: &str) -> &'static str {
-    if contains_cjk(text) {
-        "en"
-    } else {
-        "zh-CN"
-    }
-}
-
 fn parse_google_translation(response_text: &str) -> Result<String, String> {
     let json: serde_json::Value = serde_json::from_str(response_text)
         .map_err(|error| format!("解析 Google 翻译响应失败: {}", error))?;
@@ -594,34 +544,14 @@ async fn test_ai_config(base_url: String, api_key: String, model: String) -> Res
 }
 
 #[tauri::command]
-async fn translate_text(
+async fn translate_with_ai(
     base_url: String,
     api_key: String,
     model: String,
-    text: String,
-) -> Result<String, String> {
-    translate_text_with_prompt(base_url, api_key, model, text, translate_prompt).await
-}
-
-#[tauri::command]
-async fn translate_text_to_chinese(
-    base_url: String,
-    api_key: String,
-    model: String,
-    text: String,
-) -> Result<String, String> {
-    translate_text_with_prompt(base_url, api_key, model, text, screenshot_translate_prompt).await
-}
-
-async fn translate_text_with_prompt(
-    base_url: String,
-    api_key: String,
-    model: String,
-    text: String,
-    prompt: fn(&str) -> String,
+    prompt: String,
 ) -> Result<String, String> {
     let (base_url, api_key, model) = validate_ai_request_config(base_url, api_key, model)?;
-    if text.trim().is_empty() {
+    if prompt.trim().is_empty() {
         return Ok(String::new());
     }
 
@@ -636,7 +566,7 @@ async fn translate_text_with_prompt(
         "messages": [
             {
                 "role": "user",
-                "content": prompt(&text)
+                "content": prompt
             }
         ]
     })
@@ -686,14 +616,8 @@ async fn translate_text_with_prompt(
 }
 
 #[tauri::command]
-async fn translate_with_google(text: String) -> Result<String, String> {
-    let target_language = google_target_language(&text);
-    translate_with_google_target(text, target_language).await
-}
-
-#[tauri::command]
-async fn translate_with_google_to_chinese(text: String) -> Result<String, String> {
-    translate_with_google_target(text, "zh-CN").await
+async fn translate_with_google(text: String, target_language: String) -> Result<String, String> {
+    translate_with_google_target(text, &target_language).await
 }
 
 async fn translate_with_google_target(
@@ -804,14 +728,11 @@ async fn translate_with_google_target_at_endpoint(
 }
 
 #[tauri::command]
-async fn translate_with_microsoft(text: String) -> Result<String, String> {
-    let target_language = google_target_language(&text);
-    translate_with_microsoft_target(text, target_language).await
-}
-
-#[tauri::command]
-async fn translate_with_microsoft_to_chinese(text: String) -> Result<String, String> {
-    translate_with_microsoft_target(text, "zh-CN").await
+async fn translate_with_microsoft(
+    text: String,
+    target_language: String,
+) -> Result<String, String> {
+    translate_with_microsoft_target(text, &target_language).await
 }
 
 async fn translate_with_microsoft_target(
@@ -953,12 +874,9 @@ pub fn run() {
             delete_screenshot_file,
             get_dict_data,
             recognize_screenshot_text,
-            translate_text,
-            translate_text_to_chinese,
+            translate_with_ai,
             translate_with_google,
-            translate_with_google_to_chinese,
             translate_with_microsoft,
-            translate_with_microsoft_to_chinese,
             test_ai_config,
             secure_storage_get,
             secure_storage_set,
@@ -982,10 +900,10 @@ mod tests {
     };
 
     use super::{
-        delete_screenshot_file, google_target_language, is_screenshot_temp_path,
-        normalize_openai_base_url, parse_google_translation, parse_microsoft_translation,
-        recognize_screenshot_text, screenshot_temp_path, screenshot_translate_prompt,
-        translate_with_google_target_at_endpoint, validate_microsoft_token, vision_roi,
+        delete_screenshot_file, is_screenshot_temp_path, normalize_openai_base_url,
+        parse_google_translation, parse_microsoft_translation, recognize_screenshot_text,
+        screenshot_temp_path, translate_with_google_target_at_endpoint, validate_microsoft_token,
+        vision_roi,
         ScreenRegion,
     };
 
@@ -1066,21 +984,6 @@ mod tests {
             normalize_openai_base_url("https://token.sensenova.cn/v1/chat/completions/"),
             "https://token.sensenova.cn/v1"
         );
-    }
-
-    #[test]
-    fn chooses_google_target_language_for_cjk_input() {
-        assert_eq!(google_target_language("你好"), "en");
-        assert_eq!(google_target_language("Hello"), "zh-CN");
-    }
-
-    #[test]
-    fn screenshot_translation_prompt_is_fixed_english_to_chinese() {
-        let prompt = screenshot_translate_prompt("你好\nHello");
-
-        assert!(prompt.contains("英文文本"));
-        assert!(prompt.contains("翻译成中文"));
-        assert!(!prompt.contains("中文，则将其翻译成英文"));
     }
 
     #[test]

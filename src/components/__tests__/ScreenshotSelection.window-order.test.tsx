@@ -42,7 +42,10 @@ vi.mock('@/lib/screenshot-translation', () => ({
   }),
   recognizeScreenshotText: vi.fn(),
   screenshotImageSrc: () => 'asset://screenshot.png',
-  translateScreenshotText: vi.fn(),
+}))
+
+vi.mock('@/lib/translate', () => ({
+  translate: vi.fn(),
 }))
 
 describe('screenshot selection window display order', () => {

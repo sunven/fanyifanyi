@@ -1,21 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { deleteScreenshotFile, readSelectionWindowParams, translateScreenshotText } from '../screenshot-translation'
+import { deleteScreenshotFile, readSelectionWindowParams } from '../screenshot-translation'
 
-const { config, getTranslationSettingsLoaded, invoke } = vi.hoisted(() => {
-  const config = {
-    id: 'model-1',
-    name: 'DeepSeek V3',
-    baseURL: 'https://ark.cn-beijing.volces.com/api/v3',
-    apiKey: 'sk-test-key',
-    model: 'ep-20251028141454-jlhp4',
-  }
-
+const { invoke } = vi.hoisted(() => {
   return {
-    config,
-    getTranslationSettingsLoaded: vi.fn(() => Promise.resolve({
-      aiConfig: config,
-      provider: 'ai',
-    })),
     invoke: vi.fn(),
   }
 })
@@ -25,33 +12,9 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke,
 }))
 
-vi.mock('../config', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../config')>()
-  return {
-    ...original,
-    getTranslationSettingsLoaded,
-  }
-})
-
-describe('translateScreenshotText', () => {
+describe('screenshot translation session helpers', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    invoke.mockResolvedValue('你好！')
-    getTranslationSettingsLoaded.mockResolvedValue({
-      aiConfig: config,
-      provider: 'ai',
-    })
-  })
-
-  it('uses the fixed English-to-Chinese AI command', async () => {
-    await expect(translateScreenshotText('Hello!')).resolves.toBe('你好！')
-
-    expect(invoke).toHaveBeenCalledWith('translate_text_to_chinese', {
-      baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
-      apiKey: 'sk-test-key',
-      model: 'ep-20251028141454-jlhp4',
-      text: 'Hello!',
-    })
   })
 
   it('deletes a captured screenshot through the backend command', async () => {
@@ -67,32 +30,6 @@ describe('translateScreenshotText', () => {
       imagePath: '/tmp/shot.png',
       screenX: 1,
       logicalWidth: 7,
-    })
-  })
-
-  it('uses the fixed Google target command', async () => {
-    getTranslationSettingsLoaded.mockResolvedValue({
-      aiConfig: config,
-      provider: 'google',
-    })
-
-    await translateScreenshotText('Hello!')
-
-    expect(invoke).toHaveBeenCalledWith('translate_with_google_to_chinese', {
-      text: 'Hello!',
-    })
-  })
-
-  it('uses the fixed Microsoft target command', async () => {
-    getTranslationSettingsLoaded.mockResolvedValue({
-      aiConfig: config,
-      provider: 'microsoft',
-    })
-
-    await translateScreenshotText('Hello!')
-
-    expect(invoke).toHaveBeenCalledWith('translate_with_microsoft_to_chinese', {
-      text: 'Hello!',
     })
   })
 })
