@@ -158,6 +158,11 @@ export default function TranslationApp() {
                   className="h-full resize-none overflow-y-auto bg-card/80 text-base leading-7 field-sizing-fixed md:text-base"
                   value={sourceText}
                   onChange={e => setSourceText(e.target.value)}
+                  spellCheck={false}
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  autoComplete="off"
+                  {...{ writingsuggestions: 'false' }}
                 />
                 {sourceText && (
                   <Button

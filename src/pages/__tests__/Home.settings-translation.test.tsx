@@ -109,4 +109,15 @@ describe('home settings navigation', () => {
     expect(screen.getByPlaceholderText('输入要翻译的文本...')).toHaveValue('hello')
     expect(translate).toHaveBeenCalledTimes(1)
   })
+
+  it('does not ask the system for inline writing suggestions while typing', () => {
+    render(<Home />)
+
+    const source = screen.getByPlaceholderText('输入要翻译的文本...')
+    expect(source).toHaveAttribute('spellcheck', 'false')
+    expect(source).toHaveAttribute('autocorrect', 'off')
+    expect(source).toHaveAttribute('autocapitalize', 'off')
+    expect(source).toHaveAttribute('autocomplete', 'off')
+    expect(source).toHaveAttribute('writingsuggestions', 'false')
+  })
 })
