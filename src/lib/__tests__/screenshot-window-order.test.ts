@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { openScreenshotSelectionWindow } from '../screenshot-translation'
+import { startScreenshotTranslation } from '../screenshot-translation'
 
 const {
   appWindow,
@@ -83,7 +83,7 @@ describe('screenshot selection window order', () => {
   })
 
   it('keeps the main window hidden until the selection window is ready', async () => {
-    const opening = openScreenshotSelectionWindow()
+    const opening = startScreenshotTranslation()
 
     await vi.advanceTimersByTimeAsync(120)
     await opening
@@ -95,7 +95,7 @@ describe('screenshot selection window order', () => {
 
   it('restores the main window when screen capture fails', async () => {
     invoke.mockRejectedValueOnce(new Error('capture failed'))
-    const opening = openScreenshotSelectionWindow()
+    const opening = startScreenshotTranslation()
     const rejection = expect(opening).rejects.toThrow('capture failed')
 
     await vi.advanceTimersByTimeAsync(120)
@@ -111,7 +111,7 @@ describe('screenshot selection window order', () => {
       }
       return Promise.resolve(vi.fn())
     })
-    const opening = openScreenshotSelectionWindow()
+    const opening = startScreenshotTranslation()
     const rejection = expect(opening).rejects.toThrow('create failed')
 
     await vi.advanceTimersByTimeAsync(120)

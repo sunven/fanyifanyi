@@ -2,14 +2,12 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { X } from 'lucide-react'
 import { useEffect, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
-import { clearTranslationOverlayPayload, readTranslationOverlayPayload } from '@/lib/screenshot-translation'
+import { takeOverlayText } from '@/lib/screenshot-translation'
 
 export default function TranslationOverlay() {
-  const payload = useMemo(() => readTranslationOverlayPayload(), [])
+  const text = useMemo(() => takeOverlayText(), [])
 
   useEffect(() => {
-    clearTranslationOverlayPayload()
-
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         getCurrentWindow().destroy()
@@ -20,7 +18,7 @@ export default function TranslationOverlay() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [])
 
-  if (!payload) {
+  if (!text) {
     return null
   }
 
@@ -36,7 +34,7 @@ export default function TranslationOverlay() {
         <X className="h-2.5 w-2.5" />
       </Button>
       <div className="break-words pr-3">
-        {payload.text}
+        {text}
       </div>
     </div>
   )

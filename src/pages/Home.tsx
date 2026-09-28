@@ -11,7 +11,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { UpdateToast } from '@/components/update-toast'
 import { NonMacOnly, TitleBarSpacer, WindowTitleBar } from '@/components/WindowTitleBar'
 import { useUpdate } from '@/contexts/UpdateContext'
-import { destroyScreenshotWindows, openScreenshotSelectionWindow } from '@/lib/screenshot-translation'
+import { destroyScreenshotWindows, startScreenshotTranslation } from '@/lib/screenshot-translation'
 import Settings from './Settings'
 
 function ModeSwitch() {
@@ -97,7 +97,7 @@ export default function TranslationApp() {
   const handleScreenshotTranslation = async () => {
     setScreenshotError('')
     try {
-      await openScreenshotSelectionWindow()
+      await startScreenshotTranslation()
     }
     catch (err) {
       setScreenshotError(err instanceof Error ? err.message : String(err))

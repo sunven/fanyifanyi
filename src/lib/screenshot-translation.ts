@@ -1,6 +1,7 @@
 import { convertFileSrc, invoke } from '@tauri-apps/api/core'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { cursorPosition, getCurrentWindow, monitorFromPoint } from '@tauri-apps/api/window'
+import { translate } from './translate'
 
 const SCREENSHOT_SELECTION_WINDOW_PREFIX = 'screenshot-selection-'
 const TRANSLATION_OVERLAY_WINDOW_PREFIX = 'translation-overlay-'
@@ -12,11 +13,11 @@ export interface ScreenRegion {
   height: number
 }
 
-export interface CapturedScreenshot {
+interface CapturedScreenshot {
   imagePath: string
 }
 
-export interface SelectionWindowParams {
+interface SelectionWindowParams {
   imagePath: string
   screenX: number
   screenY: number
@@ -29,7 +30,7 @@ export interface SelectionWindowParams {
   logicalHeight: number
 }
 
-export interface TranslationOverlayPayload {
+interface TranslationOverlayPayload {
   x: number
   y: number
   width: number
@@ -37,15 +38,15 @@ export interface TranslationOverlayPayload {
   text: string
 }
 
-export function screenshotImageSrc(imagePath: string) {
+function screenshotImageSrc(imagePath: string) {
   return convertFileSrc(imagePath)
 }
 
-export async function captureScreenRegion(region: ScreenRegion) {
+async function captureScreenRegion(region: ScreenRegion) {
   return invoke<CapturedScreenshot>('capture_screen_region', { region })
 }
 
-export async function recognizeScreenshotText(
+async function recognizeScreenshotText(
   imagePath: string,
   imageRegion: ScreenRegion,
   imageWidth: number,
@@ -59,7 +60,7 @@ export async function recognizeScreenshotText(
   })
 }
 
-export async function deleteScreenshotFile(imagePath: string) {
+async function deleteScreenshotFile(imagePath: string) {
   return invoke<void>('delete_screenshot_file', { imagePath })
 }
 
@@ -72,7 +73,7 @@ export async function destroyScreenshotWindows() {
   await Promise.all(screenshotWindows.map(window => window.destroy().catch(() => undefined)))
 }
 
-export async function openScreenshotSelectionWindow() {
+export async function startScreenshotTranslation() {
   const appWindow = getCurrentWindow()
   const position = await cursorPosition()
   const monitor = await monitorFromPoint(position.x, position.y)
@@ -144,7 +145,7 @@ export async function openScreenshotSelectionWindow() {
   }
 }
 
-export async function openTranslationOverlay(payload: TranslationOverlayPayload) {
+async function openTranslationOverlay(payload: TranslationOverlayPayload) {
   const label = `${TRANSLATION_OVERLAY_WINDOW_PREFIX}${Date.now()}`
   localStorage.setItem(`translation-overlay:${label}`, JSON.stringify({
     ...payload,
@@ -169,7 +170,7 @@ export async function openTranslationOverlay(payload: TranslationOverlayPayload)
   })
 }
 
-export function readSelectionWindowParams(search = window.location.search): SelectionWindowParams {
+function readSelectionWindowParams(search = window.location.search): SelectionWindowParams {
   const params = new URLSearchParams(search)
   return {
     imagePath: params.get('imagePath') ?? '',
@@ -194,28 +195,7 @@ function translationOverlayStorageKey(search = window.location.search) {
   return `translation-overlay:${label}`
 }
 
-export function readTranslationOverlayPayload(search = window.location.search) {
-  const key = translationOverlayStorageKey(search)
-  if (!key) {
-    return null
-  }
-
-  const raw = localStorage.getItem(key)
-  if (!raw) {
-    return null
-  }
-
-  return JSON.parse(raw) as TranslationOverlayPayload
-}
-
-export function clearTranslationOverlayPayload(search = window.location.search) {
-  const key = translationOverlayStorageKey(search)
-  if (key) {
-    localStorage.removeItem(key)
-  }
-}
-
-export function physicalSelection(selection: ScreenRegion, scaleFactor: number): ScreenRegion {
+function physicalSelection(selection: ScreenRegion, scaleFactor: number): ScreenRegion {
   return {
     x: Math.round(selection.x * scaleFactor),
     y: Math.round(selection.y * scaleFactor),
@@ -224,11 +204,59 @@ export function physicalSelection(selection: ScreenRegion, scaleFactor: number):
   }
 }
 
-export function logicalOverlayRect(selection: ScreenRegion, params: SelectionWindowParams) {
+function logicalOverlayRect(selection: ScreenRegion, params: SelectionWindowParams) {
   return {
     x: params.logicalX + selection.x,
     y: params.logicalY + selection.y,
     width: selection.width,
     height: selection.height,
   }
+}
+
+export function selectionFrame() {
+  const params = readSelectionWindowParams()
+  return {
+    imageSrc: params.imagePath ? screenshotImageSrc(params.imagePath) : '',
+    logicalWidth: params.logicalWidth,
+    logicalHeight: params.logicalHeight,
+  }
+}
+
+export async function discardSelection() {
+  const { imagePath } = readSelectionWindowParams()
+  if (!imagePath) {
+    return
+  }
+  await deleteScreenshotFile(imagePath).catch(() => undefined)
+}
+
+export async function translateSelection(selection: ScreenRegion) {
+  const params = readSelectionWindowParams()
+  const recognizedText = await recognizeScreenshotText(
+    params.imagePath,
+    physicalSelection(selection, params.scaleFactor),
+    params.screenWidth,
+    params.screenHeight,
+  )
+  const translatedText = await translate(recognizedText, 'screenshot')
+  await openTranslationOverlay({
+    ...logicalOverlayRect(selection, params),
+    text: translatedText,
+  })
+  await discardSelection()
+}
+
+export function takeOverlayText() {
+  const key = translationOverlayStorageKey()
+  if (!key) {
+    return null
+  }
+
+  const raw = localStorage.getItem(key)
+  localStorage.removeItem(key)
+  if (!raw) {
+    return null
+  }
+
+  return (JSON.parse(raw) as TranslationOverlayPayload).text
 }

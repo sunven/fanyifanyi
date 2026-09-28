@@ -24,28 +24,13 @@ vi.mock('@tauri-apps/api/webviewWindow', () => ({
 }))
 
 vi.mock('@/lib/screenshot-translation', () => ({
-  deleteScreenshotFile: vi.fn(() => Promise.resolve()),
-  logicalOverlayRect: vi.fn(),
-  openTranslationOverlay: vi.fn(),
-  physicalSelection: vi.fn(),
-  readSelectionWindowParams: () => ({
-    imagePath: '/tmp/fanyifanyi-screen-order.png',
-    screenX: 0,
-    screenY: 0,
-    screenWidth: 1600,
-    screenHeight: 1000,
-    scaleFactor: 2,
-    logicalX: 0,
-    logicalY: 0,
+  discardSelection: vi.fn(() => Promise.resolve()),
+  selectionFrame: () => ({
+    imageSrc: 'asset://screenshot.png',
     logicalWidth: 800,
     logicalHeight: 500,
   }),
-  recognizeScreenshotText: vi.fn(),
-  screenshotImageSrc: () => 'asset://screenshot.png',
-}))
-
-vi.mock('@/lib/translate', () => ({
-  translate: vi.fn(),
+  translateSelection: vi.fn(),
 }))
 
 describe('screenshot selection window display order', () => {

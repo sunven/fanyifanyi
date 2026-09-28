@@ -4,16 +4,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import {
-  deleteScreenshotFile,
-  logicalOverlayRect,
-  openTranslationOverlay,
-  physicalSelection,
-  readSelectionWindowParams,
-  recognizeScreenshotText,
-  screenshotImageSrc,
-} from '@/lib/screenshot-translation'
-import { translate } from '@/lib/translate'
+import { discardSelection, selectionFrame, translateSelection } from '@/lib/screenshot-translation'
 
 function normalizeSelection(startX: number, startY: number, endX: number, endY: number): ScreenRegion {
   return {
@@ -25,24 +16,21 @@ function normalizeSelection(startX: number, startY: number, endX: number, endY: 
 }
 
 export default function ScreenshotSelection() {
-  const params = useMemo(() => readSelectionWindowParams(), [])
-  const imagePath = params.imagePath
+  const frame = useMemo(() => selectionFrame(), [])
   const [error, setError] = useState('')
   const [dragStart, setDragStart] = useState<{ x: number, y: number } | null>(null)
   const [selection, setSelection] = useState<ScreenRegion | null>(null)
   const [isTranslating, setIsTranslating] = useState(false)
 
   const closeSelectionWindow = useCallback(async () => {
-    if (imagePath) {
-      await deleteScreenshotFile(imagePath).catch(() => undefined)
-    }
+    await discardSelection()
     await getCurrentWindow().destroy()
-  }, [imagePath])
+  }, [])
 
   useEffect(() => {
     async function showWindow() {
       try {
-        if (!imagePath) {
+        if (!frame.imageSrc) {
           setError('截图文件不存在')
         }
         const selectionWindow = getCurrentWindow()
@@ -57,7 +45,7 @@ export default function ScreenshotSelection() {
     }
 
     void showWindow()
-  }, [imagePath])
+  }, [frame.imageSrc])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -72,35 +60,22 @@ export default function ScreenshotSelection() {
 
   useEffect(() => {
     return () => {
-      if (imagePath) {
-        void deleteScreenshotFile(imagePath).catch(() => undefined)
-      }
+      void discardSelection()
     }
-  }, [imagePath])
+  }, [])
 
   const selectedEnough = selection && selection.width >= 8 && selection.height >= 8
 
   async function handleTranslate() {
-    if (!selection || !imagePath) {
+    if (!selection || !frame.imageSrc) {
       return
     }
 
     setIsTranslating(true)
     setError('')
     try {
-      const imageRegion = physicalSelection(selection, params.scaleFactor)
-      const recognizedText = await recognizeScreenshotText(
-        imagePath,
-        imageRegion,
-        params.screenWidth,
-        params.screenHeight,
-      )
-      const translatedText = await translate(recognizedText, 'screenshot')
-      await openTranslationOverlay({
-        ...logicalOverlayRect(selection, params),
-        text: translatedText,
-      })
-      await closeSelectionWindow()
+      await translateSelection(selection)
+      await getCurrentWindow().destroy()
     }
     catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -114,7 +89,7 @@ export default function ScreenshotSelection() {
     <div
       className="fixed inset-0 cursor-crosshair overflow-hidden bg-black text-white"
       onMouseDown={(event) => {
-        if (!imagePath || isTranslating) {
+        if (!frame.imageSrc || isTranslating) {
           return
         }
         setError('')
@@ -129,16 +104,16 @@ export default function ScreenshotSelection() {
       }}
       onMouseUp={() => setDragStart(null)}
     >
-      {imagePath && (
+      {frame.imageSrc && (
         <img
-          src={screenshotImageSrc(imagePath)}
+          src={frame.imageSrc}
           alt=""
           className="absolute inset-0 h-full w-full select-none object-fill"
           draggable={false}
         />
       )}
       <div className="absolute inset-0 bg-black/20" />
-      {!imagePath && !error && (
+      {!frame.imageSrc && !error && (
         <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded bg-black/75 px-3 py-2 text-sm">
           准备截图...
         </div>
@@ -158,8 +133,8 @@ export default function ScreenshotSelection() {
         <div
           className="absolute flex gap-2 rounded bg-black/85 p-2 shadow-lg"
           style={{
-            left: Math.max(8, Math.min(selection.x + selection.width - 124, params.logicalWidth - 132)),
-            top: Math.max(8, Math.min(selection.y + selection.height + 8, params.logicalHeight - 48)),
+            left: Math.max(8, Math.min(selection.x + selection.width - 124, frame.logicalWidth - 132)),
+            top: Math.max(8, Math.min(selection.y + selection.height + 8, frame.logicalHeight - 48)),
           }}
           onMouseDown={event => event.stopPropagation()}
         >
