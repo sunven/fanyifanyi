@@ -312,7 +312,7 @@ fn vision_roi(
 }
 
 #[tauri::command]
-fn recognize_screenshot_text(
+async fn recognize_screenshot_text(
     image_path: String,
     image_region: ScreenRegion,
     image_width: f64,
@@ -322,7 +322,12 @@ fn recognize_screenshot_text(
     if !is_screenshot_temp_path(&image_path) {
         return Err("截图临时文件路径无效".to_string());
     }
-    recognize_screenshot_text_impl(image_path, image_region, image_width, image_height)
+
+    tauri::async_runtime::spawn_blocking(move || {
+        recognize_screenshot_text_impl(image_path, image_region, image_width, image_height)
+    })
+    .await
+    .map_err(|error| format!("本地 OCR 任务失败: {error}"))?
 }
 
 #[cfg(target_os = "macos")]
@@ -1075,7 +1080,7 @@ mod tests {
 
     #[test]
     fn rejects_ocr_for_non_app_screenshot_paths() {
-        let err = recognize_screenshot_text(
+        let err = tauri::async_runtime::block_on(recognize_screenshot_text(
             std::env::current_dir()
                 .unwrap()
                 .join("fanyifanyi-screen-1.png")
@@ -1089,7 +1094,7 @@ mod tests {
             },
             10.0,
             10.0,
-        )
+        ))
         .unwrap_err();
 
         assert_eq!(err, "截图临时文件路径无效");

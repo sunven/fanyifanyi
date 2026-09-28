@@ -4,6 +4,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { Spinner } from '@/components/ui/spinner'
 import { discardSelection, selectionFrame, translateSelection } from '@/lib/screenshot-translation'
 
 function normalizeSelection(startX: number, startY: number, endX: number, endY: number): ScreenRegion {
@@ -67,12 +68,15 @@ export default function ScreenshotSelection() {
   const selectedEnough = selection && selection.width >= 8 && selection.height >= 8
 
   async function handleTranslate() {
-    if (!selection || !frame.imageSrc) {
+    if (!selection || !frame.imageSrc || isTranslating) {
       return
     }
 
     setIsTranslating(true)
     setError('')
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => resolve())
+    })
     try {
       await translateSelection(selection)
       await getCurrentWindow().destroy()
@@ -144,6 +148,14 @@ export default function ScreenshotSelection() {
           <Button size="icon" variant="ghost" onClick={() => void closeSelectionWindow()} aria-label="取消截图翻译">
             <X className="h-4 w-4" />
           </Button>
+        </div>
+      )}
+      {isTranslating && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/35">
+          <div role="status" className="flex items-center gap-2 rounded bg-black/85 px-3 py-2 text-sm shadow-lg">
+            <Spinner role="presentation" aria-hidden />
+            正在识别并翻译
+          </div>
         </div>
       )}
       {error && (
