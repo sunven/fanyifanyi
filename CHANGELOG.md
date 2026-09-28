@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.40] - 2026-09-28
+
+### Features
+
+- Remote skills
+- Disable inline writing suggestions in source text box
+
 ## [0.1.39] - 2026-09-22
 
 ### Features
