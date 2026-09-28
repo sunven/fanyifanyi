@@ -1,9 +1,10 @@
+import type { TranslationSettings } from '../config'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { translate } from '../translate'
 
 const { invoke, loadTranslationSettings, settings } = vi.hoisted(() => {
-  const settings = {
-    provider: 'ai' as const,
+  const settings: TranslationSettings = {
+    provider: 'ai',
     modelId: 'model-1',
     baseURL: 'https://ark.cn-beijing.volces.com/api/v3',
     model: 'ep-20251028141454-jlhp4',
