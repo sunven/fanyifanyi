@@ -1,5 +1,3 @@
-import { isTauri } from '@tauri-apps/api/core'
-import { getCurrentWindow } from '@tauri-apps/api/window'
 import { ScanText, Settings as SettingsIcon, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import CopyTextButton from '@/components/CopyText'
@@ -11,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { UpdateToast } from '@/components/update-toast'
 import { NonMacOnly, TitleBarSpacer, WindowTitleBar } from '@/components/WindowTitleBar'
 import { useUpdate } from '@/contexts/UpdateContext'
-import { destroyScreenshotWindows, startScreenshotTranslation } from '@/lib/screenshot-translation'
+import { bindAppWindowClose, startScreenshotTranslation } from '@/lib/screenshot-translation'
 import Settings from './Settings'
 
 function ModeSwitch() {
@@ -33,32 +31,15 @@ export default function TranslationApp() {
   const { hasUpdate, updateInfo } = useUpdate()
 
   useEffect(() => {
-    if (!isTauri()) {
-      return
-    }
-
-    const appWindow = getCurrentWindow()
     let disposed = false
     let unlisten: (() => void) | undefined
 
-    void appWindow.onCloseRequested(async (event) => {
-      event.preventDefault()
-      try {
-        await destroyScreenshotWindows()
-      }
-      finally {
-        await appWindow.destroy()
-      }
-    }).then((stopListening) => {
+    void bindAppWindowClose().then((stopListening) => {
       if (disposed) {
         stopListening()
       }
       else {
         unlisten = stopListening
-      }
-    }).catch((err) => {
-      if (!disposed) {
-        console.error('无法注册截图窗口清理监听', err)
       }
     })
 

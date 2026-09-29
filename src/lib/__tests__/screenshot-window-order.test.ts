@@ -1,21 +1,27 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { startScreenshotTranslation } from '../screenshot-translation'
+import { bindAppWindowClose, startScreenshotTranslation } from '../screenshot-translation'
 
 const {
   appWindow,
   createWebviewWindow,
   cursorPosition,
+  getAllWindows,
   invoke,
+  isTauri,
   monitorFromPoint,
   selectionWindow,
 } = vi.hoisted(() => ({
   appWindow: {
+    destroy: vi.fn(),
     hide: vi.fn(),
+    onCloseRequested: vi.fn(),
     show: vi.fn(),
   },
   createWebviewWindow: vi.fn(),
   cursorPosition: vi.fn(),
+  getAllWindows: vi.fn(),
   invoke: vi.fn(),
+  isTauri: vi.fn(() => true),
   monitorFromPoint: vi.fn(),
   selectionWindow: {
     once: vi.fn(),
@@ -25,6 +31,7 @@ const {
 vi.mock('@tauri-apps/api/core', () => ({
   convertFileSrc: vi.fn(),
   invoke,
+  isTauri,
 }))
 
 vi.mock('@tauri-apps/api/window', () => ({
@@ -35,6 +42,10 @@ vi.mock('@tauri-apps/api/window', () => ({
 
 vi.mock('@tauri-apps/api/webviewWindow', () => ({
   WebviewWindow: class MockWebviewWindow {
+    static getAll() {
+      return getAllWindows()
+    }
+
     constructor(label: string, options: unknown) {
       createWebviewWindow(label, options)
     }
@@ -53,8 +64,11 @@ describe('screenshot selection window order', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     vi.clearAllMocks()
+    isTauri.mockImplementation(() => true)
     appWindow.hide.mockResolvedValue(undefined)
     appWindow.show.mockResolvedValue(undefined)
+    appWindow.destroy.mockResolvedValue(undefined)
+    appWindow.onCloseRequested.mockResolvedValue(vi.fn())
     cursorPosition.mockResolvedValue({ x: 120, y: 80 })
     monitorFromPoint.mockResolvedValue({
       position: {
@@ -121,5 +135,76 @@ describe('screenshot selection window order', () => {
     expect(invoke).toHaveBeenCalledWith('delete_screenshot_file', {
       imagePath: '/tmp/fanyifanyi-screen-order.png',
     })
+  })
+
+  it('destroys screenshot windows before closing the app window', async () => {
+    const closeOrder: string[] = []
+    let finishOverlayDestroy: (() => void) | undefined
+    const selection = {
+      label: 'screenshot-selection-1',
+      destroy: vi.fn(async () => {
+        closeOrder.push('selection')
+      }),
+    }
+    const overlay = {
+      label: 'translation-overlay-1',
+      destroy: vi.fn(() => new Promise<void>((resolve) => {
+        finishOverlayDestroy = () => {
+          closeOrder.push('overlay')
+          resolve()
+        }
+      })),
+    }
+    const unrelated = {
+      label: 'settings',
+      destroy: vi.fn().mockResolvedValue(undefined),
+    }
+    getAllWindows.mockResolvedValue([selection, overlay, unrelated])
+    const unlisten = vi.fn()
+    let handler: ((event: { preventDefault: () => void }) => Promise<void>) | undefined
+    appWindow.onCloseRequested.mockImplementation(async (next: (event: { preventDefault: () => void }) => Promise<void>) => {
+      handler = next
+      return unlisten
+    })
+    appWindow.destroy.mockImplementation(async () => {
+      closeOrder.push('main')
+    })
+
+    await expect(bindAppWindowClose()).resolves.toBe(unlisten)
+    const event = { preventDefault: vi.fn() }
+    const closing = handler?.(event)
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(overlay.destroy).toHaveBeenCalledTimes(1)
+    expect(appWindow.destroy).not.toHaveBeenCalled()
+
+    finishOverlayDestroy?.()
+    await closing
+
+    expect(event.preventDefault).toHaveBeenCalledTimes(1)
+    expect(selection.destroy).toHaveBeenCalledTimes(1)
+    expect(unrelated.destroy).not.toHaveBeenCalled()
+    expect(closeOrder).toEqual(['selection', 'overlay', 'main'])
+  })
+
+  it('does not bind close outside the app', async () => {
+    isTauri.mockReturnValueOnce(false)
+
+    const stop = await bindAppWindowClose()
+    stop()
+
+    expect(appWindow.onCloseRequested).not.toHaveBeenCalled()
+  })
+
+  it('reports a close-listener registration failure', async () => {
+    const error = new Error('listen failed')
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    appWindow.onCloseRequested.mockRejectedValueOnce(error)
+
+    const stop = await bindAppWindowClose()
+    stop()
+
+    expect(consoleError).toHaveBeenCalledWith('无法注册截图窗口清理监听', error)
+    consoleError.mockRestore()
   })
 })

@@ -2,33 +2,16 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ScreenshotSelection from '../ScreenshotSelection'
 
-const { appWindow, selectionWindow } = vi.hoisted(() => ({
-  appWindow: {
-    show: vi.fn(),
-  },
-  selectionWindow: {
-    destroy: vi.fn(),
-    setFocus: vi.fn(),
-    show: vi.fn(),
-  },
-}))
-
-vi.mock('@tauri-apps/api/window', () => ({
-  getCurrentWindow: () => selectionWindow,
-}))
-
-vi.mock('@tauri-apps/api/webviewWindow', () => ({
-  WebviewWindow: {
-    getByLabel: vi.fn(() => Promise.resolve(appWindow)),
-  },
-}))
-
-const { translateSelection } = vi.hoisted(() => ({
+const { cancelSelection, revealSelectionWindow, translateSelection } = vi.hoisted(() => ({
+  cancelSelection: vi.fn(() => Promise.resolve()),
+  revealSelectionWindow: vi.fn(() => Promise.resolve()),
   translateSelection: vi.fn(),
 }))
 
 vi.mock('@/lib/screenshot-translation', () => ({
+  cancelSelection,
   discardSelection: vi.fn(() => Promise.resolve()),
+  revealSelectionWindow,
   selectionFrame: () => ({
     imageSrc: 'asset://screenshot.png',
     logicalWidth: 800,
@@ -37,27 +20,15 @@ vi.mock('@/lib/screenshot-translation', () => ({
   translateSelection,
 }))
 
-describe('screenshot selection window display order', () => {
+describe('screenshot selection surface', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    appWindow.show.mockResolvedValue(undefined)
-    selectionWindow.show.mockResolvedValue(undefined)
-    selectionWindow.setFocus.mockResolvedValue(undefined)
+    revealSelectionWindow.mockResolvedValue(undefined)
+    cancelSelection.mockResolvedValue(undefined)
   })
 
-  it('restores the main window behind the visible selection window', async () => {
-    render(<ScreenshotSelection />)
-
-    await waitFor(() => expect(appWindow.show).toHaveBeenCalledTimes(1))
-
-    expect(selectionWindow.show.mock.invocationCallOrder[0])
-      .toBeLessThan(appWindow.show.mock.invocationCallOrder[0])
-    expect(appWindow.show.mock.invocationCallOrder[0])
-      .toBeLessThan(selectionWindow.setFocus.mock.invocationCallOrder[0])
-  })
-
-  it('shows an error when the main window cannot be restored', async () => {
-    appWindow.show.mockRejectedValueOnce(new Error('restore failed'))
+  it('paints a reported reveal failure', async () => {
+    revealSelectionWindow.mockRejectedValueOnce(new Error('restore failed'))
 
     render(<ScreenshotSelection />)
 
@@ -85,5 +56,13 @@ describe('screenshot selection window display order', () => {
 
     finishTranslation()
     await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
+  })
+
+  it('cancels from the escape key', async () => {
+    render(<ScreenshotSelection />)
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+
+    await waitFor(() => expect(cancelSelection).toHaveBeenCalledTimes(1))
   })
 })

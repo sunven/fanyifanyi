@@ -1,11 +1,9 @@
 import type { ScreenRegion } from '@/lib/screenshot-translation'
-import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
-import { getCurrentWindow } from '@tauri-apps/api/window'
 import { X } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
-import { discardSelection, selectionFrame, translateSelection } from '@/lib/screenshot-translation'
+import { cancelSelection, discardSelection, revealSelectionWindow, selectionFrame, translateSelection } from '@/lib/screenshot-translation'
 
 function normalizeSelection(startX: number, startY: number, endX: number, endY: number): ScreenRegion {
   return {
@@ -18,46 +16,27 @@ function normalizeSelection(startX: number, startY: number, endX: number, endY: 
 
 export default function ScreenshotSelection() {
   const frame = useMemo(() => selectionFrame(), [])
-  const [error, setError] = useState('')
+  const [error, setError] = useState(() => (frame.imageSrc ? '' : '截图文件不存在'))
   const [dragStart, setDragStart] = useState<{ x: number, y: number } | null>(null)
   const [selection, setSelection] = useState<ScreenRegion | null>(null)
   const [isTranslating, setIsTranslating] = useState(false)
 
-  const closeSelectionWindow = useCallback(async () => {
-    await discardSelection()
-    await getCurrentWindow().destroy()
-  }, [])
-
   useEffect(() => {
-    async function showWindow() {
-      try {
-        if (!frame.imageSrc) {
-          setError('截图文件不存在')
-        }
-        const selectionWindow = getCurrentWindow()
-        await selectionWindow.show()
-        const appWindow = await WebviewWindow.getByLabel('main')
-        await appWindow?.show()
-        await selectionWindow.setFocus()
-      }
-      catch (err) {
-        setError(err instanceof Error ? err.message : String(err))
-      }
-    }
-
-    void showWindow()
-  }, [frame.imageSrc])
+    void revealSelectionWindow().catch((err) => {
+      setError(err instanceof Error ? err.message : String(err))
+    })
+  }, [])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        void closeSelectionWindow()
+        void cancelSelection()
       }
     }
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [closeSelectionWindow])
+  }, [])
 
   useEffect(() => {
     return () => {
@@ -79,7 +58,6 @@ export default function ScreenshotSelection() {
     })
     try {
       await translateSelection(selection)
-      await getCurrentWindow().destroy()
     }
     catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -145,7 +123,7 @@ export default function ScreenshotSelection() {
           <Button size="sm" onClick={handleTranslate} disabled={isTranslating}>
             {isTranslating ? '翻译中...' : '翻译'}
           </Button>
-          <Button size="icon" variant="ghost" onClick={() => void closeSelectionWindow()} aria-label="取消截图翻译">
+          <Button size="icon" variant="ghost" onClick={() => void cancelSelection()} aria-label="取消截图翻译">
             <X className="h-4 w-4" />
           </Button>
         </div>

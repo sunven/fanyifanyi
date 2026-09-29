@@ -1,4 +1,4 @@
-import { convertFileSrc, invoke } from '@tauri-apps/api/core'
+import { convertFileSrc, invoke, isTauri } from '@tauri-apps/api/core'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { cursorPosition, getCurrentWindow, monitorFromPoint } from '@tauri-apps/api/window'
 import { translate } from './translate'
@@ -64,13 +64,61 @@ async function deleteScreenshotFile(imagePath: string) {
   return invoke<void>('delete_screenshot_file', { imagePath })
 }
 
-export async function destroyScreenshotWindows() {
+type SubmissionPhase = 'idle' | 'working' | 'opening' | 'opened' | 'cancelled'
+
+let submissionPhase: SubmissionPhase = 'idle'
+let selectionWindowDestroyed = false
+
+function submissionWasCancelled() {
+  return submissionPhase === 'cancelled'
+}
+
+async function destroyScreenshotWindows() {
   const windows = await WebviewWindow.getAll()
   const screenshotWindows = windows.filter(window =>
     window.label.startsWith(SCREENSHOT_SELECTION_WINDOW_PREFIX)
     || window.label.startsWith(TRANSLATION_OVERLAY_WINDOW_PREFIX))
 
   await Promise.all(screenshotWindows.map(window => window.destroy().catch(() => undefined)))
+}
+
+async function destroySelectionWindow() {
+  if (selectionWindowDestroyed) {
+    return
+  }
+  selectionWindowDestroyed = true
+  await getCurrentWindow().destroy()
+}
+
+export async function revealSelectionWindow() {
+  const selectionWindow = getCurrentWindow()
+  await selectionWindow.show()
+  const appWindow = await WebviewWindow.getByLabel('main')
+  await appWindow?.show()
+  await selectionWindow.setFocus()
+}
+
+export async function bindAppWindowClose(): Promise<() => void> {
+  if (!isTauri()) {
+    return () => {}
+  }
+
+  const appWindow = getCurrentWindow()
+  try {
+    return await appWindow.onCloseRequested(async (event) => {
+      event.preventDefault()
+      try {
+        await destroyScreenshotWindows()
+      }
+      finally {
+        await appWindow.destroy()
+      }
+    })
+  }
+  catch (err) {
+    console.error('无法注册截图窗口清理监听', err)
+    return () => {}
+  }
 }
 
 export async function startScreenshotTranslation() {
@@ -230,20 +278,52 @@ export async function discardSelection() {
   await deleteScreenshotFile(imagePath).catch(() => undefined)
 }
 
-export async function translateSelection(selection: ScreenRegion) {
-  const params = readSelectionWindowParams()
-  const recognizedText = await recognizeScreenshotText(
-    params.imagePath,
-    physicalSelection(selection, params.scaleFactor),
-    params.screenWidth,
-    params.screenHeight,
-  )
-  const translatedText = await translate(recognizedText, 'screenshot')
-  await openTranslationOverlay({
-    ...logicalOverlayRect(selection, params),
-    text: translatedText,
-  })
+export async function cancelSelection() {
+  if (submissionPhase === 'opening' || submissionPhase === 'opened' || submissionPhase === 'cancelled') {
+    return
+  }
+  submissionPhase = 'cancelled'
   await discardSelection()
+  await destroySelectionWindow()
+}
+
+export async function translateSelection(selection: ScreenRegion) {
+  if (submissionPhase === 'cancelled' || submissionPhase === 'opening' || submissionPhase === 'opened') {
+    return
+  }
+
+  submissionPhase = 'working'
+  const params = readSelectionWindowParams()
+  try {
+    const recognizedText = await recognizeScreenshotText(
+      params.imagePath,
+      physicalSelection(selection, params.scaleFactor),
+      params.screenWidth,
+      params.screenHeight,
+    )
+    if (submissionWasCancelled()) {
+      return
+    }
+    const translatedText = await translate(recognizedText, 'screenshot')
+    if (submissionWasCancelled()) {
+      return
+    }
+    submissionPhase = 'opening'
+    await openTranslationOverlay({
+      ...logicalOverlayRect(selection, params),
+      text: translatedText,
+    })
+    submissionPhase = 'opened'
+    await discardSelection()
+    await destroySelectionWindow()
+  }
+  catch (err) {
+    if (submissionWasCancelled()) {
+      return
+    }
+    submissionPhase = 'idle'
+    throw err
+  }
 }
 
 export function takeOverlayText() {
