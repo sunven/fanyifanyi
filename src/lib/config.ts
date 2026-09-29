@@ -165,6 +165,36 @@ function writeMetadata(configs: AIConfigs): void {
   localStorage.setItem(CONFIG_METADATA_KEY, JSON.stringify(metadata))
 }
 
+function writeStoredMetadata(metadata: StoredConfigMetadata): void {
+  localStorage.setItem(CONFIG_METADATA_KEY, JSON.stringify(metadata))
+}
+
+async function ensureMetadata(): Promise<StoredConfigMetadata> {
+  const existing = readStoredMetadata()
+  if (existing) {
+    return existing
+  }
+
+  await migrateLegacyConfig()
+  const migrated = readStoredMetadata()
+  if (migrated) {
+    return migrated
+  }
+
+  const defaults = cloneConfig(DEFAULT_CONFIG)
+  const metadata: StoredConfigMetadata = {
+    version: 1,
+    activeModelId: defaults.activeModelId,
+    translationProvider: defaults.translationProvider,
+    models: defaults.models.map(({ apiKey, ...model }) => ({
+      ...model,
+      hasApiKey: Boolean(apiKey),
+    })),
+  }
+  writeStoredMetadata(metadata)
+  return metadata
+}
+
 async function writeSecrets(configs: AIConfigs): Promise<void> {
   await Promise.all(configs.models.map(async (model) => {
     const key = modelApiKeyStorageKey(model.id)
@@ -280,14 +310,36 @@ export async function saveAIConfigs(configs: AIConfigs): Promise<void> {
   ])
 }
 
+async function writeModelSecret(modelId: string, apiKey: string): Promise<void> {
+  const key = modelApiKeyStorageKey(modelId)
+  if (apiKey) {
+    await secureStorageSet(key, apiKey)
+    return
+  }
+  await secureStorageRemove(key)
+}
+
 export async function addAIConfig(config: Omit<AIConfig, 'id'>): Promise<AIConfig> {
-  const configs = await loadAIConfigs()
+  if (!config.name || !config.baseURL || !config.model || typeof config.apiKey !== 'string') {
+    throw new Error('AI 配置无效')
+  }
+
+  const metadata = await ensureMetadata()
   const newConfig: AIConfig = {
     ...config,
     id: `model-${Date.now()}`,
   }
-  configs.models.push(newConfig)
-  await saveAIConfigs(configs)
+  metadata.models.push({
+    id: newConfig.id,
+    name: newConfig.name,
+    baseURL: newConfig.baseURL,
+    model: newConfig.model,
+    hasApiKey: Boolean(newConfig.apiKey),
+  })
+  writeStoredMetadata(metadata)
+  if (newConfig.apiKey) {
+    await secureStorageSet(modelApiKeyStorageKey(newConfig.id), newConfig.apiKey)
+  }
   return newConfig
 }
 
@@ -295,45 +347,67 @@ export async function updateAIConfig(
   id: string,
   config: Partial<Omit<AIConfig, 'id'>>,
 ): Promise<void> {
-  const configs = await loadAIConfigs()
-  const index = configs.models.findIndex(model => model.id === id)
-  if (index !== -1) {
-    configs.models[index] = { ...configs.models[index], ...config }
-    await saveAIConfigs(configs)
+  const metadata = await ensureMetadata()
+  const current = metadata.models.find(model => model.id === id)
+  if (!current) {
+    return
+  }
+
+  const next = {
+    ...current,
+    name: config.name ?? current.name,
+    baseURL: config.baseURL ?? current.baseURL,
+    model: config.model ?? current.model,
+  }
+  if (!next.name || !next.baseURL || !next.model) {
+    throw new Error('AI 配置无效')
+  }
+  if (config.apiKey !== undefined) {
+    next.hasApiKey = Boolean(config.apiKey)
+  }
+  metadata.models = metadata.models.map(model => model.id === id ? next : model)
+  writeStoredMetadata(metadata)
+  if (config.apiKey !== undefined) {
+    await writeModelSecret(id, config.apiKey)
   }
 }
 
-export async function deleteAIConfig(id: string): Promise<void> {
-  const configs = await loadAIConfigs()
-  if (configs.models.length <= 1) {
+export async function deleteAIConfig(id: string): Promise<string> {
+  const metadata = await ensureMetadata()
+  if (metadata.models.length <= 1) {
     throw new Error('至少需要保留一个模型配置')
   }
-
-  configs.models = configs.models.filter(model => model.id !== id)
-  if (configs.activeModelId === id) {
-    configs.activeModelId = configs.models[0].id
+  if (!metadata.models.some(model => model.id === id)) {
+    return metadata.activeModelId
   }
-  await saveAIConfigs(configs)
+
+  metadata.models = metadata.models.filter(model => model.id !== id)
+  if (metadata.activeModelId === id) {
+    metadata.activeModelId = metadata.models[0].id
+  }
+  writeStoredMetadata(metadata)
   await secureStorageRemove(modelApiKeyStorageKey(id))
+  return metadata.activeModelId
 }
 
 export async function setActiveModel(id: string): Promise<void> {
-  const configs = await loadAIConfigs()
-  if (configs.models.some(model => model.id === id)) {
-    configs.activeModelId = id
-    await saveAIConfigs(configs)
+  const metadata = await ensureMetadata()
+  if (!metadata.models.some(model => model.id === id)) {
+    return
   }
+  metadata.activeModelId = id
+  writeStoredMetadata(metadata)
 }
 
 export async function setTranslationProvider(provider: TranslationProvider): Promise<void> {
-  const configs = await loadAIConfigs()
-  configs.translationProvider = provider
-  await saveAIConfigs(configs)
+  const metadata = await ensureMetadata()
+  metadata.translationProvider = sanitizeTranslationProvider(provider)
+  writeStoredMetadata(metadata)
 }
 
 export async function resetAIConfig(): Promise<AIConfigs> {
-  const current = await loadAIConfigs()
-  await Promise.all(current.models.map(model => secureStorageRemove(modelApiKeyStorageKey(model.id))))
+  const metadata = readStoredMetadata()
+  await Promise.all((metadata?.models ?? []).map(model => secureStorageRemove(modelApiKeyStorageKey(model.id))))
   try {
     localStorage.removeItem(CONFIG_METADATA_KEY)
     localStorage.removeItem(LEGACY_CONFIG_KEY)

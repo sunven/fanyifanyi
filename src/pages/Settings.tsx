@@ -168,19 +168,19 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
   })
 
   // Set active model
-  const refreshConfigs = async () => {
-    setConfigs(await loadAIConfigs())
-  }
-
   const handleSetActive = async (id: string) => {
     await setActiveModel(id)
-    await refreshConfigs()
+    setConfigs(current => (
+      current.models.some(model => model.id === id)
+        ? { ...current, activeModelId: id }
+        : current
+    ))
   }
 
   const handleTranslationProviderChange = async (provider: TranslationProvider) => {
     try {
       await setTranslationProvider(provider)
-      await refreshConfigs()
+      setConfigs(current => ({ ...current, translationProvider: provider }))
     }
     catch {
       setSaveError('保存翻译引擎失败，请重试')
@@ -233,7 +233,12 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
     }
     try {
       await updateAIConfig(editingId, editDraft)
-      await refreshConfigs()
+      setConfigs(current => ({
+        ...current,
+        models: current.models.map(model => (
+          model.id === editingId ? { ...model, ...editDraft } : model
+        )),
+      }))
       handleEditDialogOpenChange(false)
     }
     catch {
@@ -250,8 +255,11 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
         setShowSaveAlert(true)
         return
       }
-      await addAIConfig(newModel)
-      await refreshConfigs()
+      const created = await addAIConfig(newModel)
+      setConfigs(current => ({
+        ...current,
+        models: [...current.models, created],
+      }))
       setShowAddDialog(false)
       setShowNewApiKey(false)
       setModelTestResults((prev) => {
@@ -344,8 +352,12 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
   // Delete model
   const handleDeleteModel = async (id: string) => {
     try {
-      await deleteAIConfig(id)
-      await refreshConfigs()
+      const activeModelId = await deleteAIConfig(id)
+      setConfigs(current => ({
+        ...current,
+        activeModelId,
+        models: current.models.filter(model => model.id !== id),
+      }))
       setShowDeleteConfirm(null)
     }
     catch (error) {
