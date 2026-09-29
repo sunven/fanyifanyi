@@ -1,3 +1,4 @@
+import type { DictionaryPhrase, DictionaryRelated, DictionarySense, DictionarySynonym } from '@/lib/dictionary'
 import PhrasesTab from './phrases-tab'
 import RelatedWordsTab from './related-wordsTab'
 import SynonymsTab from './synonyms-tab'
@@ -6,13 +7,13 @@ import WordDefinitions from './word-definitions'
 interface TabNavigationProps {
   activeTab: string
   setActiveTab: (tab: string) => void
-  definitionsData: any[]
-  phrasesData: any[]
-  synonymsData: any[]
-  relatedWordsData: any[]
+  senses: DictionarySense[]
+  phrases: DictionaryPhrase[]
+  synonyms: DictionarySynonym[]
+  relatedWords: DictionaryRelated[]
 }
 
-function TabNavigation({ activeTab, setActiveTab, definitionsData, phrasesData, synonymsData, relatedWordsData }: TabNavigationProps) {
+function TabNavigation({ activeTab, setActiveTab, senses, phrases, synonyms, relatedWords }: TabNavigationProps) {
   const tabs = [
     { id: 'definitions', label: '释义' },
     { id: 'phrases', label: '短语' },
@@ -23,13 +24,13 @@ function TabNavigation({ activeTab, setActiveTab, definitionsData, phrasesData, 
   const renderTabContent = () => {
     switch (activeTab) {
       case 'definitions':
-        return <WordDefinitions data={definitionsData} />
+        return <WordDefinitions senses={senses} />
       case 'phrases':
-        return <PhrasesTab data={phrasesData} />
+        return <PhrasesTab phrases={phrases} />
       case 'synonyms':
-        return <SynonymsTab data={synonymsData} />
+        return <SynonymsTab synonyms={synonyms} />
       case 'related':
-        return <RelatedWordsTab data={relatedWordsData} />
+        return <RelatedWordsTab relatedWords={relatedWords} />
       default:
         return <p className="py-6 text-sm text-muted-foreground">没有内容。</p>
     }

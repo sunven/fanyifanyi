@@ -1,6 +1,8 @@
+import type { DictionaryEntry } from '@/lib/dictionary'
 import { invoke } from '@tauri-apps/api/core'
 import { useState } from 'react'
 import { useDebounce } from 'react-use'
+import { readDictionaryEntry } from '@/lib/dictionary'
 import TabNavigation from './tab-navigation'
 import WordForms from './word-forms'
 import WordHeader from './word-header'
@@ -22,11 +24,10 @@ function DictionarySkeleton() {
 
 function DictionaryDisplay({ q }: DictionaryDisplayProps) {
   const [activeTab, setActiveTab] = useState('definitions')
-  const [data, setData] = useState<any>()
+  const [entry, setEntry] = useState<DictionaryEntry | null>(null)
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [error, setError] = useState('')
   const hasQuery = q.trim().length > 0
-  const wordData = hasQuery ? data?.ec?.word?.[0] : undefined
   const viewStatus = hasQuery ? status : 'idle'
 
   const getDictData = async () => {
@@ -34,16 +35,16 @@ function DictionaryDisplay({ q }: DictionaryDisplayProps) {
       return
     }
     setActiveTab('definitions')
-    setData(undefined)
+    setEntry(null)
     setStatus('loading')
     setError('')
     try {
-      const next = await invoke<any>('get_dict_data', { q })
-      setData(next)
+      const next = await invoke('get_dict_data', { q })
+      setEntry(readDictionaryEntry(next, q))
       setStatus('ready')
     }
     catch (err) {
-      setData(undefined)
+      setEntry(null)
       setStatus('error')
       const message = typeof err === 'string' ? err.trim() : ''
       setError(message || '词典查询失败。请再试一次。')
@@ -67,10 +68,9 @@ function DictionaryDisplay({ q }: DictionaryDisplayProps) {
       <div className="shrink-0">
         <WordHeader
           word={q}
-          examTypes={data?.ec?.exam_type}
-          usphone={wordData?.usphone}
+          pronunciation={entry?.pronunciation}
         />
-        <WordForms wordForms={wordData?.wfs} />
+        <WordForms forms={entry?.forms ?? []} />
       </div>
 
       <div className="min-h-0 flex-1 overflow-hidden">
@@ -83,17 +83,17 @@ function DictionaryDisplay({ q }: DictionaryDisplayProps) {
         {viewStatus === 'error' && (
           <p role="alert" className="pt-4 text-sm text-destructive">{error}</p>
         )}
-        {viewStatus === 'ready' && !wordData && (
+        {viewStatus === 'ready' && !entry && (
           <p className="pt-4 text-sm leading-relaxed text-muted-foreground">没有收录这个词。</p>
         )}
-        {viewStatus === 'ready' && wordData && (
+        {viewStatus === 'ready' && entry && (
           <TabNavigation
             activeTab={activeTab}
             setActiveTab={setActiveTab}
-            definitionsData={wordData?.trs}
-            phrasesData={data?.phrs?.phrs}
-            synonymsData={data?.syno?.synos}
-            relatedWordsData={data?.rel_word?.rels}
+            senses={entry.senses}
+            phrases={entry.phrases}
+            synonyms={entry.synonyms}
+            relatedWords={entry.relatedWords}
           />
         )}
       </div>

@@ -1,29 +1,24 @@
+import type { DictionarySense } from '@/lib/dictionary'
+
 interface WordDefinitionsProps {
-  data: any[]
+  senses: DictionarySense[]
 }
 
-function WordDefinitions({ data }: WordDefinitionsProps) {
-  if (!data?.length) {
+function WordDefinitions({ senses }: WordDefinitionsProps) {
+  if (!senses.length) {
     return <p className="py-6 text-sm leading-relaxed text-muted-foreground">没有找到释义。</p>
   }
 
   return (
     <div className="space-y-4 py-2">
-      {data.map((def, index) => {
-        const definition = def.tr[0].l.i[0]
-        const pos = definition.indexOf(' ')
-        const partOfSpeech = definition.slice(0, pos)
-        const meaning = definition.slice(pos + 1)
-
-        return (
-          <div key={index} className="border-l-2 border-primary/40 pl-3">
-            <h3 className="mb-1 text-xs font-medium tracking-wide text-primary">
-              {partOfSpeech}
-            </h3>
-            <p className="text-sm leading-relaxed text-foreground">{meaning}</p>
-          </div>
-        )
-      })}
+      {senses.map(sense => (
+        <div key={`${sense.partOfSpeech}:${sense.meaning}`} className="border-l-2 border-primary/40 pl-3">
+          <h3 className="mb-1 text-xs font-medium tracking-wide text-primary">
+            {sense.partOfSpeech}
+          </h3>
+          <p className="text-sm leading-relaxed text-foreground">{sense.meaning}</p>
+        </div>
+      ))}
     </div>
   )
 }

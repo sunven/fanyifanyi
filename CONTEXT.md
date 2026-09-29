@@ -1,6 +1,6 @@
 # fanyifanyi
 
-This context defines the product language for fanyifanyi's translation workflows.
+This context defines the product language for fanyifanyi's translation and dictionary workflows.
 
 ## Language
 
@@ -19,3 +19,7 @@ _Avoid_: preview dialog, confirmation page
 **Translation Overlay**:
 The Chinese translation rendered as one block inside the selected screen region after OCR and translation finish.
 _Avoid_: result panel, copied text, app preview, line-by-line image translation
+
+**Dictionary**:
+The lookup beside Desk Translation: senses, phrases, and synonyms for a word the user typed.
+_Avoid_: dict, word lookup, Youdao result
