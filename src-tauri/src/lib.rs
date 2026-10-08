@@ -1,5 +1,4 @@
 use std::{
-    fs,
     path::{Path, PathBuf},
     process::Command,
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -11,9 +10,11 @@ use tauri_plugin_http::reqwest;
 use tauri_plugin_log::{Target, TargetKind};
 
 mod history;
+mod screenshot_store;
 mod secret_store;
 mod shortcuts;
 
+use screenshot_store::{is_screenshot_temp_path, ScreenshotStore};
 use secret_store::FileSecretStore;
 
 const SECRETS_FILE_NAME: &str = "secrets.json";
@@ -35,6 +36,7 @@ struct ScreenRegion {
 #[serde(rename_all = "camelCase")]
 struct CapturedScreenshot {
     image_path: String,
+    work_area: ScreenRegion,
 }
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -214,52 +216,89 @@ fn ensure_screen_capture_access() -> Result<(), String> {
     Err("无法截图。请在 macOS 系统设置 > 隐私与安全性 > 屏幕录制 中允许 fanyifanyi。".to_string())
 }
 
-fn is_screenshot_temp_path(path: &Path) -> bool {
-    let Some(file_name) = path.file_name().and_then(|value| value.to_str()) else {
-        return false;
-    };
-    if !file_name.starts_with("fanyifanyi-screen-") || !file_name.ends_with(".png") {
-        return false;
-    }
+#[tauri::command]
+fn delete_screenshot_file(
+    window: tauri::WebviewWindow,
+    store: tauri::State<'_, ScreenshotStore>,
+    image_path: String,
+) -> Result<(), String> {
+    store.release(Path::new(&image_path), window.label())
+}
 
-    let Some(parent) = path.parent() else {
-        return false;
-    };
-    match (parent.canonicalize(), std::env::temp_dir().canonicalize()) {
-        (Ok(parent), Ok(temp_dir)) => parent == temp_dir,
-        _ => parent == std::env::temp_dir(),
+#[tauri::command]
+fn transfer_screenshot_file(
+    window: tauri::WebviewWindow,
+    store: tauri::State<'_, ScreenshotStore>,
+    image_path: String,
+    target_window_label: String,
+) -> Result<bool, String> {
+    store.transfer(
+        Path::new(&image_path),
+        window.label(),
+        &target_window_label,
+        || {
+            window
+                .app_handle()
+                .get_webview_window(&target_window_label)
+                .is_some()
+        },
+    )
+}
+
+fn logical_work_area(work_area: &tauri::PhysicalRect<i32, u32>, scale_factor: f64) -> ScreenRegion {
+    let position = work_area.position.to_logical::<f64>(scale_factor);
+    let size = work_area.size.to_logical::<f64>(scale_factor);
+    ScreenRegion {
+        x: position.x,
+        y: position.y,
+        width: size.width,
+        height: size.height,
     }
 }
 
 #[tauri::command]
-fn delete_screenshot_file(image_path: String) -> Result<(), String> {
-    let image_path = PathBuf::from(image_path);
-    if !is_screenshot_temp_path(&image_path) {
-        return Err("截图临时文件路径无效".to_string());
+fn capture_screen_region(
+    window: tauri::WebviewWindow,
+    store: tauri::State<'_, ScreenshotStore>,
+    region: ScreenRegion,
+) -> Result<CapturedScreenshot, String> {
+    let region = validate_screen_region(region)?;
+    let app = window.app_handle();
+    let monitor = app
+        .monitor_from_point(
+            region.x + region.width / 2.0,
+            region.y + region.height / 2.0,
+        )
+        .map_err(|error| format!("读取显示器工作区失败: {}", error))?
+        .ok_or_else(|| "无法识别当前显示器".to_string())?;
+    let work_area = logical_work_area(monitor.work_area(), monitor.scale_factor());
+    let image_path = screenshot_temp_path("screen");
+    let capture_result = capture_screen_region_impl(region, &image_path);
+    let owner_exists = store.register(image_path.clone(), window.label(), || {
+        app.get_webview_window(window.label()).is_some()
+    })?;
+    if let Err(error) = capture_result {
+        let _ = store.release(&image_path, window.label());
+        return Err(error);
     }
-
-    match fs::remove_file(&image_path) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(format!("删除截图临时文件失败: {}", error)),
+    if !owner_exists {
+        return Err("截图窗口已关闭".to_string());
     }
-}
-
-#[tauri::command]
-fn capture_screen_region(region: ScreenRegion) -> Result<CapturedScreenshot, String> {
-    capture_screen_region_impl(region)
+    Ok(CapturedScreenshot {
+        image_path: image_path.to_string_lossy().into_owned(),
+        work_area,
+    })
 }
 
 #[cfg(target_os = "macos")]
-fn capture_screen_region_impl(region: ScreenRegion) -> Result<CapturedScreenshot, String> {
+fn capture_screen_region_impl(region: ScreenRegion, image_path: &Path) -> Result<(), String> {
     ensure_screen_capture_access()?;
     let (x, y, width, height) = rounded_capture_region(region)?;
-    let image_path = screenshot_temp_path("screen");
     let rect = format!("{},{},{},{}", x, y, width, height);
 
     let output = Command::new("screencapture")
         .args(["-x", "-R", &rect])
-        .arg(&image_path)
+        .arg(image_path)
         .output()
         .map_err(|error| format!("调用 macOS 截图失败: {}", error))?;
 
@@ -277,13 +316,11 @@ fn capture_screen_region_impl(region: ScreenRegion) -> Result<CapturedScreenshot
         ));
     }
 
-    Ok(CapturedScreenshot {
-        image_path: image_path.to_string_lossy().into_owned(),
-    })
+    Ok(())
 }
 
 #[cfg(not(target_os = "macos"))]
-fn capture_screen_region_impl(_region: ScreenRegion) -> Result<CapturedScreenshot, String> {
+fn capture_screen_region_impl(_region: ScreenRegion, _image_path: &Path) -> Result<(), String> {
     Err("截图翻译第一版仅支持 macOS".to_string())
 }
 
@@ -341,7 +378,7 @@ fn recognize_screenshot_text_impl(
 ) -> Result<String, String> {
     use objc2::{rc::autoreleasepool, AnyThread, ClassType};
     use objc2_core_foundation::{CGPoint, CGRect, CGSize};
-    use objc2_foundation::{NSArray, NSDictionary, NSString, NSURL};
+    use objc2_foundation::{NSArray, NSData, NSDictionary, NSString};
     use objc2_vision::{
         VNImageRequestHandler, VNRecognizeTextRequest, VNRequest, VNRequestTextRecognitionLevel,
     };
@@ -353,17 +390,16 @@ fn recognize_screenshot_text_impl(
         vision_roi(image_region, image_width, image_height)?;
 
     autoreleasepool(|_| {
-        let url = NSURL::from_file_path(&image_path)
-            .ok_or_else(|| "截图路径无法转换为文件 URL".to_string())?;
+        let bytes = std::fs::read(&image_path)
+            .map_err(|error| format!("读取截图文件失败: {}", error))?;
+        let data = NSData::with_bytes(&bytes);
         let options = NSDictionary::new();
 
-        let handler = unsafe {
-            VNImageRequestHandler::initWithURL_options(
-                VNImageRequestHandler::alloc(),
-                &url,
-                &options,
-            )
-        };
+        let handler = VNImageRequestHandler::initWithData_options(
+            VNImageRequestHandler::alloc(),
+            &data,
+            &options,
+        );
         let request = unsafe { VNRecognizeTextRequest::init(VNRecognizeTextRequest::alloc()) };
         let english = NSString::from_str("en-US");
         let languages = NSArray::from_slice(&[&*english]);
@@ -865,6 +901,17 @@ async fn translate_with_microsoft_target(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(ScreenshotStore::default())
+        .on_window_event(|window, event| {
+            if matches!(event, tauri::WindowEvent::Destroyed) {
+                if let Err(error) = window
+                    .state::<ScreenshotStore>()
+                    .release_window(window.label())
+                {
+                    log::warn!("窗口截图清理失败: {}", error);
+                }
+            }
+        })
         .setup(|app| {
             let path = app.path().app_data_dir()?.join(SECRETS_FILE_NAME);
             app.manage(FileSecretStore::new(path));
@@ -893,6 +940,7 @@ pub fn run() {
             greet,
             capture_screen_region,
             delete_screenshot_file,
+            transfer_screenshot_file,
             get_dict_data,
             recognize_screenshot_text,
             translate_with_ai,
@@ -929,10 +977,10 @@ mod tests {
     };
 
     use super::{
-        delete_screenshot_file, is_screenshot_temp_path, normalize_openai_base_url,
+        is_screenshot_temp_path, logical_work_area, normalize_openai_base_url,
         parse_google_translation, parse_microsoft_translation, recognize_screenshot_text,
         screenshot_temp_path, stored_model_api_key, translate_with_google_target_at_endpoint,
-        validate_microsoft_token, vision_roi, ScreenRegion,
+        validate_microsoft_token, vision_roi, CapturedScreenshot, ScreenRegion, ScreenshotStore,
     };
     use crate::secret_store::FileSecretStore;
 
@@ -1085,11 +1133,58 @@ mod tests {
     fn deletes_app_owned_screenshot_temp_file() {
         let path = screenshot_temp_path("screen");
         std::fs::write(&path, b"temporary screenshot").unwrap();
+        let store = ScreenshotStore::default();
+        store.register(path.clone(), "main", || true).unwrap();
 
-        delete_screenshot_file(path.to_string_lossy().into_owned()).unwrap();
+        store.release(&path, "main").unwrap();
         assert!(!path.exists());
 
-        delete_screenshot_file(path.to_string_lossy().into_owned()).unwrap();
+        store.release(&path, "main").unwrap();
+    }
+
+    #[test]
+    fn screenshot_work_area_uses_logical_monitor_coordinates() {
+        let work_area = logical_work_area(
+            &tauri::PhysicalRect {
+                position: tauri::PhysicalPosition::new(-2880, 50),
+                size: tauri::PhysicalSize::new(2800, 1750),
+            },
+            2.0,
+        );
+        let capture = CapturedScreenshot {
+            image_path: "screenshot.png".to_string(),
+            work_area,
+        };
+
+        assert_eq!(
+            serde_json::to_value(capture).unwrap(),
+            serde_json::json!({
+                "imagePath": "screenshot.png",
+                "workArea": { "x": -1440.0, "y": 25.0, "width": 1400.0, "height": 875.0 }
+            })
+        );
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn recognizes_wide_screenshot_text_with_vision() {
+        let path = screenshot_temp_path("screen");
+        std::fs::write(&path, include_bytes!("../tests/fixtures/screenshot-ocr.png")).unwrap();
+        let result = tauri::async_runtime::block_on(recognize_screenshot_text(
+            path.to_string_lossy().into_owned(),
+            ScreenRegion {
+                x: 20.0,
+                y: 70.0,
+                width: 1360.0,
+                height: 50.0,
+            },
+            1394.0,
+            152.0,
+        ));
+        std::fs::remove_file(path).unwrap();
+        let text = result.expect("valid wide screenshot must remain readable by Vision");
+        assert!(text.contains("Screenshot reading overlay"), "{text}");
+        assert!(text.contains("original screenshot"), "{text}");
     }
 
     #[test]

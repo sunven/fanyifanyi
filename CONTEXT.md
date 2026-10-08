@@ -9,7 +9,7 @@ Translation of text the user typed, between Chinese and English, shown in the tr
 _Avoid_: input translation, manual translation, text-box translation
 
 **Screenshot Translation**:
-A workflow where the user selects an arbitrary English region on the screen and sees the Chinese translation overlaid at the same screen coordinates.
+A workflow where the user selects an arbitrary English region on the screen and sees the Chinese translation in a reading overlay near the selected region.
 _Avoid_: image translation, preview translation, OCR-only translation
 
 **Selection Toolbar**:
@@ -17,7 +17,7 @@ A small control surface shown next to a selected screen region before Screenshot
 _Avoid_: preview dialog, confirmation page
 
 **Translation Overlay**:
-The Chinese translation rendered as one block inside the selected screen region after OCR and translation finish.
+A reading surface shown after OCR and translation finish. It keeps the selected bounds when readable, expands when needed, and allows switching between scrollable Chinese translation and the captured original region without losing the translation reading position.
 _Avoid_: result panel, copied text, app preview, line-by-line image translation
 
 **Dictionary**:

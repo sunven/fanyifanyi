@@ -27,6 +27,7 @@ const {
   monitorFromPoint: vi.fn(),
   selectionWindow: {
     once: vi.fn(),
+    destroy: vi.fn(),
   },
 }))
 
@@ -52,6 +53,8 @@ vi.mock('@tauri-apps/api/webviewWindow', () => ({
       createWebviewWindow(label, options)
     }
 
+    destroy = selectionWindow.destroy
+
     once(event: string, handler: (event: { payload: unknown }) => void) {
       return selectionWindow.once(event, handler)
     }
@@ -66,6 +69,7 @@ describe('screenshot selection window order', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     vi.clearAllMocks()
+    createWebviewWindow.mockReset()
     isTauri.mockImplementation(() => true)
     appWindow.hide.mockResolvedValue(undefined)
     appWindow.show.mockResolvedValue(undefined)
@@ -74,6 +78,7 @@ describe('screenshot selection window order', () => {
     getAllWindows.mockResolvedValue([])
     appWindow.destroy.mockResolvedValue(undefined)
     appWindow.onCloseRequested.mockResolvedValue(vi.fn())
+    selectionWindow.destroy.mockResolvedValue(undefined)
     cursorPosition.mockResolvedValue({ x: 120, y: 80 })
     monitorFromPoint.mockResolvedValue({
       position: {
@@ -88,7 +93,9 @@ describe('screenshot selection window order', () => {
       },
       scaleFactor: 2,
     })
-    invoke.mockResolvedValue({ imagePath: '/tmp/fanyifanyi-screen-order.png' })
+    invoke.mockImplementation(async (command: string) => command === 'capture_screen_region'
+      ? { imagePath: '/tmp/fanyifanyi-screen-order.png', workArea: { x: 0, y: 24, width: 800, height: 450 } }
+      : true)
     selectionWindow.once.mockImplementation((event, handler) => {
       if (event === 'tauri://created') {
         queueMicrotask(() => handler({ payload: null }))
@@ -115,7 +122,10 @@ describe('screenshot selection window order', () => {
   it('captures only once when the shortcut is repeated during preparation', async () => {
     let finishCapture: (() => void) | undefined
     invoke.mockImplementationOnce(() => new Promise((resolve) => {
-      finishCapture = () => resolve({ imagePath: '/tmp/fanyifanyi-screen-order.png' })
+      finishCapture = () => resolve({
+        imagePath: '/tmp/fanyifanyi-screen-order.png',
+        workArea: { x: 0, y: 24, width: 800, height: 450 },
+      })
     }))
 
     const opening = startScreenshotTranslation()
@@ -224,6 +234,7 @@ describe('screenshot selection window order', () => {
       destroy: vi.fn().mockResolvedValue(undefined),
     }
     getAllWindows.mockResolvedValue([selection, overlay, unrelated])
+    localStorage.setItem('translation-overlay:translation-overlay-1', 'pending payload')
     const unlisten = vi.fn()
     let handler: ((event: { preventDefault: () => void }) => Promise<void>) | undefined
     appWindow.onCloseRequested.mockImplementation(async (next: (event: { preventDefault: () => void }) => Promise<void>) => {
@@ -249,6 +260,34 @@ describe('screenshot selection window order', () => {
     expect(selection.destroy).toHaveBeenCalledTimes(1)
     expect(unrelated.destroy).not.toHaveBeenCalled()
     expect(closeOrder).toEqual(['selection', 'overlay', 'main'])
+    expect(localStorage.getItem('translation-overlay:translation-overlay-1')).toBeNull()
+  })
+
+  it('cleans the capture and restores main after a synchronous creation failure', async () => {
+    createWebviewWindow.mockImplementationOnce(() => {
+      throw new Error('create failed')
+    })
+    const opening = startScreenshotTranslation()
+    const failure = expect(opening).rejects.toThrow('create failed')
+
+    await vi.advanceTimersByTimeAsync(120)
+    await failure
+
+    expect(invoke).toHaveBeenCalledWith('delete_screenshot_file', { imagePath: '/tmp/fanyifanyi-screen-order.png' })
+    expect(appWindow.show).toHaveBeenCalledTimes(1)
+  })
+
+  it('releases the main-owned capture when the selection closes before handoff', async () => {
+    invoke.mockImplementation(async (command: string) => command === 'capture_screen_region'
+      ? { imagePath: '/tmp/fanyifanyi-screen-order.png', workArea: { x: 0, y: 24, width: 800, height: 450 } }
+      : false)
+    const opening = startScreenshotTranslation()
+
+    await vi.advanceTimersByTimeAsync(120)
+    await opening
+
+    expect(invoke).toHaveBeenCalledWith('delete_screenshot_file', { imagePath: '/tmp/fanyifanyi-screen-order.png' })
+    expect(appWindow.show).toHaveBeenCalledTimes(1)
   })
 
   it('does not bind close outside the app', async () => {

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
   appWindow,
@@ -6,8 +6,12 @@ const {
   emitTo,
   holdOverlay,
   invoke,
+  listen,
+  overlayWindow,
+  overlayReady,
   selectionWindow,
   translate,
+  unlistenReady,
 } = vi.hoisted(() => ({
   appWindow: {
     show: vi.fn(),
@@ -19,12 +23,27 @@ const {
     release: undefined as (() => void) | undefined,
   },
   invoke: vi.fn(),
+  listen: vi.fn(),
+  overlayWindow: {
+    destroy: vi.fn(),
+    setFocus: vi.fn(),
+    show: vi.fn(),
+  },
+  overlayReady: {
+    held: false,
+    error: '',
+    present: true,
+    handler: undefined as ((event: { payload: { label: string, error?: string } }) => void) | undefined,
+  },
   selectionWindow: {
+    label: 'screenshot-selection-test',
+    hide: vi.fn(),
     destroy: vi.fn(),
     setFocus: vi.fn(),
     show: vi.fn(),
   },
   translate: vi.fn(),
+  unlistenReady: vi.fn(),
 }))
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -35,25 +54,35 @@ vi.mock('@tauri-apps/api/core', () => ({
 
 vi.mock('@tauri-apps/api/event', () => ({
   emitTo,
+  listen,
 }))
 
 vi.mock('@tauri-apps/api/webviewWindow', () => ({
   WebviewWindow: class MockWebviewWindow {
-    static getByLabel() {
-      return Promise.resolve(appWindow)
+    static getByLabel(label: string) {
+      return Promise.resolve(label === 'main' ? appWindow : overlayReady.present ? overlayWindow : null)
     }
 
-    constructor(label: string, options: unknown) {
+    constructor(readonly label: string, options: unknown) {
       createWebviewWindow(label, options)
     }
 
+    destroy = overlayWindow.destroy
+    show = overlayWindow.show
+    setFocus = overlayWindow.setFocus
+
     once(event: string, handler: (event: { payload: unknown }) => void) {
       if (event === 'tauri://created') {
+        const complete = () => {
+          handler({ payload: null })
+          if (!overlayReady.held)
+            overlayReady.handler?.({ payload: { label: this.label, error: overlayReady.error || undefined } })
+        }
         if (holdOverlay.current) {
-          holdOverlay.release = () => handler({ payload: null })
+          holdOverlay.release = complete
         }
         else {
-          queueMicrotask(() => handler({ payload: null }))
+          queueMicrotask(complete)
         }
       }
       return Promise.resolve(vi.fn())
@@ -85,6 +114,10 @@ function showSelectionWindow() {
     logicalY: '200',
     logicalWidth: '800',
     logicalHeight: '500',
+    workAreaX: '100',
+    workAreaY: '200',
+    workAreaWidth: '800',
+    workAreaHeight: '500',
   })
   window.history.replaceState({}, '', `/?${search.toString()}`)
 }
@@ -97,15 +130,37 @@ describe('screenshot translation session', () => {
     vi.resetModules()
     holdOverlay.current = false
     holdOverlay.release = undefined
+    overlayReady.held = false
+    overlayReady.error = ''
+    overlayReady.present = true
+    overlayReady.handler = undefined
+    createWebviewWindow.mockReset()
+    overlayWindow.destroy.mockResolvedValue(undefined)
+    overlayWindow.show.mockResolvedValue(undefined)
+    overlayWindow.setFocus.mockResolvedValue(undefined)
+    listen.mockImplementation(async (_event, handler) => {
+      overlayReady.handler = handler
+      return unlistenReady
+    })
     emitTo.mockResolvedValue(undefined)
-    invoke.mockResolvedValue('Hello')
+    invoke.mockImplementation(async (command: string) => {
+      if (command === 'recognize_screenshot_text')
+        return 'Hello'
+      if (command === 'transfer_screenshot_file')
+        return true
+    })
     translate.mockResolvedValue({ text: '你好', engine: { provider: 'google' } })
+    selectionWindow.hide.mockResolvedValue(undefined)
     selectionWindow.show.mockResolvedValue(undefined)
     selectionWindow.setFocus.mockResolvedValue(undefined)
     selectionWindow.destroy.mockResolvedValue(undefined)
     appWindow.show.mockResolvedValue(undefined)
     showSelectionWindow()
     session = await import('../screenshot-translation')
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('shows the selection window only the image and logical size', () => {
@@ -141,7 +196,7 @@ describe('screenshot translation session', () => {
       imageWidth: 1600,
       imageHeight: 1000,
     })
-    expect(translate).toHaveBeenCalledWith('Hello', 'screenshot', undefined, undefined)
+    expect(translate).toHaveBeenCalledWith('Hello', 'screenshot', expect.any(AbortSignal), undefined)
     expect(invoke).toHaveBeenCalledWith('history_record', {
       entry: expect.objectContaining({
         kind: 'screenshot',
@@ -157,12 +212,20 @@ describe('screenshot translation session', () => {
         y: 220,
         width: 30,
         height: 40,
+        visible: false,
       }),
     )
     expect(invoke).toHaveBeenCalledWith('delete_screenshot_file', {
       imagePath: '/tmp/shot.png',
     })
     expect(selectionWindow.destroy).toHaveBeenCalledTimes(1)
+    expect(invoke).toHaveBeenCalledWith('transfer_screenshot_file', {
+      imagePath: '/tmp/shot.png',
+      targetWindowLabel: createWebviewWindow.mock.calls[0][0],
+    })
+    expect(listen.mock.invocationCallOrder[0]).toBeLessThan(createWebviewWindow.mock.invocationCallOrder[0])
+    expect(overlayWindow.show.mock.invocationCallOrder[0]).toBeLessThan(selectionWindow.destroy.mock.invocationCallOrder[0])
+    expect(unlistenReady).toHaveBeenCalledTimes(1)
   })
 
   it('opens an overlay for empty ocr text and still discards the capture', async () => {
@@ -171,7 +234,7 @@ describe('screenshot translation session', () => {
 
     await session.translateSelection(selection)
 
-    expect(translate).toHaveBeenCalledWith('', 'screenshot', undefined, undefined)
+    expect(translate).toHaveBeenCalledWith('', 'screenshot', expect.any(AbortSignal), undefined)
     expect(createWebviewWindow).toHaveBeenCalledTimes(1)
     expect(invoke).toHaveBeenCalledWith('delete_screenshot_file', {
       imagePath: '/tmp/shot.png',
@@ -206,7 +269,7 @@ describe('screenshot translation session', () => {
     await session.translateSelection(selection, { provider: 'microsoft' })
 
     expect(invoke.mock.calls.filter(([command]) => command === 'recognize_screenshot_text')).toHaveLength(1)
-    expect(translate).toHaveBeenLastCalledWith('Hello', 'screenshot', undefined, { provider: 'microsoft' })
+    expect(translate).toHaveBeenLastCalledWith('Hello', 'screenshot', expect.any(AbortSignal), { provider: 'microsoft' })
     expect(invoke.mock.calls.filter(([command]) => command === 'history_record')).toHaveLength(1)
   })
 
@@ -225,7 +288,7 @@ describe('screenshot translation session', () => {
       imageWidth: 1600,
       imageHeight: 1000,
     }])
-    expect(translate).toHaveBeenLastCalledWith('Different region', 'screenshot', undefined, undefined)
+    expect(translate).toHaveBeenLastCalledWith('Different region', 'screenshot', expect.any(AbortSignal), undefined)
     expect(invoke).toHaveBeenCalledWith('history_record', {
       entry: expect.objectContaining({ sourceText: 'Different region' }),
     })
@@ -277,6 +340,8 @@ describe('screenshot translation session', () => {
         return Promise.resolve('Hello')
       if (command === 'history_record')
         return Promise.reject(new Error('disk full'))
+      if (command === 'transfer_screenshot_file')
+        return Promise.resolve(true)
       return Promise.resolve()
     })
 
@@ -288,8 +353,8 @@ describe('screenshot translation session', () => {
     expect(invoke).toHaveBeenCalledWith('delete_screenshot_file', { imagePath: '/tmp/shot.png' })
     expect(selectionWindow.destroy).toHaveBeenCalledTimes(1)
     const label = createWebviewWindow.mock.calls[0][0]
-    window.history.replaceState({}, '', `/?window=translation-overlay&label=${label}`)
-    expect(session.takeOverlayText()).toBe('你好')
+    expect(localStorage.getItem(`translation-overlay:${label}`)).toBeNull()
+    expect(overlayWindow.destroy).not.toHaveBeenCalled()
   })
 
   it('voids a submit that has not opened the overlay', async () => {
@@ -324,7 +389,10 @@ describe('screenshot translation session', () => {
 
     const pending = session.translateSelection(selection)
     await vi.waitFor(() => expect(translate).toHaveBeenCalledTimes(1))
+    const requestSignal = translate.mock.calls[0][2] as AbortSignal
+    expect(requestSignal.aborted).toBe(false)
     await session.cancelSelection()
+    expect(requestSignal.aborted).toBe(true)
     finishTranslation?.()
     await pending
 
@@ -335,19 +403,144 @@ describe('screenshot translation session', () => {
     expect(selectionWindow.destroy).toHaveBeenCalledTimes(1)
   })
 
-  it('does not roll back an overlay once opening has started', async () => {
+  it('cancels a hidden overlay before native creation completes', async () => {
     holdOverlay.current = true
     const pending = session.translateSelection(selection)
 
     await vi.waitFor(() => expect(createWebviewWindow).toHaveBeenCalledTimes(1))
-    await session.cancelSelection()
+    const cancellation = session.cancelSelection()
+    await vi.waitFor(() => expect(selectionWindow.hide).toHaveBeenCalledTimes(1))
+    expect(selectionWindow.destroy).not.toHaveBeenCalled()
     holdOverlay.release?.()
+    await cancellation
     await pending
+    await Promise.resolve()
+
+    expect(overlayWindow.show).not.toHaveBeenCalled()
+    expect(overlayWindow.destroy).toHaveBeenCalledTimes(1)
+    expect(unlistenReady).toHaveBeenCalledTimes(1)
+    expect(invoke.mock.calls.filter(([command]) => command === 'history_record')).toHaveLength(0)
+    const label = createWebviewWindow.mock.calls[0][0]
+    expect(localStorage.getItem(`translation-overlay:${label}`)).toBeNull()
 
     expect(createWebviewWindow).toHaveBeenCalledTimes(1)
     expect(selectionWindow.destroy).toHaveBeenCalledTimes(1)
     const deletes = invoke.mock.calls.filter(([command]) => command === 'delete_screenshot_file')
     expect(deletes).toHaveLength(1)
+  })
+
+  it('reports OCR, provider translation, and overlay preparation separately', async () => {
+    const progress = vi.fn()
+
+    await session.translateSelection(selection, undefined, progress)
+
+    expect(progress.mock.calls).toEqual([['recognizing'], ['translating'], ['opening']])
+    expect(progress.mock.invocationCallOrder[0]).toBeLessThan(invoke.mock.invocationCallOrder[0])
+    expect(progress.mock.invocationCallOrder[1]).toBeLessThan(translate.mock.invocationCallOrder[0])
+    expect(progress.mock.invocationCallOrder[2]).toBeLessThan(createWebviewWindow.mock.invocationCallOrder[0])
+  })
+
+  it('skips the OCR phase when a retry reuses recognized text', async () => {
+    translate.mockRejectedValueOnce(new Error('provider failed'))
+    await expect(session.translateSelection(selection)).rejects.toThrow('provider failed')
+    const progress = vi.fn()
+
+    await session.translateSelection(selection, { provider: 'microsoft' }, progress)
+
+    expect(progress.mock.calls).toEqual([['translating'], ['opening']])
+  })
+
+  it('settles cancellation without waiting for OCR or screenshot file deletion', async () => {
+    invoke.mockImplementation((command: string) => {
+      if (command === 'recognize_screenshot_text' || command === 'delete_screenshot_file')
+        return new Promise(() => {})
+      return Promise.resolve()
+    })
+    const progress = vi.fn()
+    const pending = session.translateSelection(selection, undefined, progress)
+
+    await session.cancelSelection()
+    await pending
+
+    expect(selectionWindow.destroy).toHaveBeenCalledTimes(1)
+    expect(progress.mock.calls).toEqual([['recognizing']])
+    expect(translate).not.toHaveBeenCalled()
+  })
+
+  it('settles cancellation without waiting for a provider response', async () => {
+    translate.mockImplementationOnce(() => new Promise(() => {}))
+    const pending = session.translateSelection(selection)
+    await vi.waitFor(() => expect(translate).toHaveBeenCalledTimes(1))
+
+    await session.cancelSelection()
+    await pending
+
+    expect(selectionWindow.destroy).toHaveBeenCalledTimes(1)
+    expect(createWebviewWindow).not.toHaveBeenCalled()
+  })
+
+  it('cancels an overlay waiting for layout without waiting for the ready timeout', async () => {
+    overlayReady.held = true
+    const pending = session.translateSelection(selection)
+    await vi.waitFor(() => expect(createWebviewWindow).toHaveBeenCalledTimes(1))
+    const label = createWebviewWindow.mock.calls[0][0]
+
+    await session.cancelSelection()
+    await pending
+    overlayReady.handler?.({ payload: { label } })
+    await Promise.resolve()
+
+    expect(overlayWindow.show).not.toHaveBeenCalled()
+    expect(overlayWindow.destroy).toHaveBeenCalledTimes(1)
+    expect(selectionWindow.destroy).toHaveBeenCalledTimes(1)
+    expect(unlistenReady).toHaveBeenCalledTimes(1)
+    expect(localStorage.getItem(`translation-overlay:${label}`)).toBeNull()
+    expect(invoke.mock.calls.filter(([command]) => command === 'history_record')).toHaveLength(0)
+  })
+
+  it('finishes cancellation when hidden overlay cleanup completes before the parent hide response', async () => {
+    let finishHide: () => void = () => {}
+    selectionWindow.hide.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      finishHide = resolve
+    }))
+    overlayReady.held = true
+    const pending = session.translateSelection(selection)
+    await vi.waitFor(() => expect(createWebviewWindow).toHaveBeenCalledTimes(1))
+
+    const cancellation = session.cancelSelection()
+    await pending
+    expect(overlayWindow.destroy).toHaveBeenCalledTimes(1)
+    finishHide()
+    await cancellation
+
+    expect(selectionWindow.destroy).toHaveBeenCalledTimes(1)
+    expect(overlayWindow.show).not.toHaveBeenCalled()
+  })
+
+  it('preserves an already displayed overlay while ownership transfer is pending', async () => {
+    let finishTransfer: (value: boolean) => void = () => {}
+    invoke.mockImplementation((command: string) => {
+      if (command === 'recognize_screenshot_text')
+        return Promise.resolve('Hello')
+      if (command === 'transfer_screenshot_file') {
+        return new Promise<boolean>((resolve) => {
+          finishTransfer = resolve
+        })
+      }
+      return Promise.resolve()
+    })
+    const pending = session.translateSelection(selection)
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledWith('transfer_screenshot_file', expect.anything()))
+
+    await session.cancelSelection()
+    expect(selectionWindow.destroy).not.toHaveBeenCalled()
+    expect(overlayWindow.destroy).not.toHaveBeenCalled()
+    finishTransfer(true)
+    await pending
+
+    expect(selectionWindow.destroy).toHaveBeenCalledTimes(1)
+    expect(overlayWindow.destroy).not.toHaveBeenCalled()
+    expect(invoke.mock.calls.filter(([command]) => command === 'history_record')).toHaveLength(1)
   })
 
   it('discards the capture from the current window and ignores a repeated discard', async () => {
@@ -363,18 +556,112 @@ describe('screenshot translation session', () => {
     })
   })
 
-  it('returns overlay text once', () => {
-    window.history.replaceState({}, '', '/?window=translation-overlay&label=test-overlay')
-    localStorage.setItem('translation-overlay:test-overlay', JSON.stringify({
-      x: 110,
-      y: 220,
-      width: 30,
-      height: 40,
-      text: '你好',
-    }))
+  it('waits for layout before showing the overlay or transferring the screenshot', async () => {
+    overlayReady.held = true
+    const pending = session.translateSelection(selection)
+    await vi.waitFor(() => expect(createWebviewWindow).toHaveBeenCalledTimes(1))
+    const label = createWebviewWindow.mock.calls[0][0]
+    const payload = JSON.parse(localStorage.getItem(`translation-overlay:${label}`)!)
 
-    expect(session.takeOverlayText()).toBe('你好')
-    expect(session.takeOverlayText()).toBeNull()
-    expect(localStorage.getItem('translation-overlay:test-overlay')).toBeNull()
+    expect(payload.original).toEqual({
+      imagePath: '/tmp/shot.png',
+      region: selection,
+      imageWidth: 800,
+      imageHeight: 500,
+    })
+    expect(payload.workArea).toEqual({ x: 100, y: 200, width: 800, height: 500 })
+    expect(overlayWindow.show).not.toHaveBeenCalled()
+    expect(invoke.mock.calls.filter(([command]) => command === 'transfer_screenshot_file')).toHaveLength(0)
+
+    overlayReady.handler?.({ payload: { label: 'some-other-overlay' } })
+    expect(overlayWindow.show).not.toHaveBeenCalled()
+    overlayReady.handler?.({ payload: { label } })
+    await pending
+
+    expect(overlayWindow.show).toHaveBeenCalledTimes(1)
+    expect(selectionWindow.destroy).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the selection for retry after an overlay initialization failure', async () => {
+    overlayReady.error = 'layout failed'
+
+    await expect(session.translateSelection(selection)).rejects.toThrow('layout failed')
+
+    expect(overlayWindow.destroy).toHaveBeenCalledTimes(1)
+    expect(selectionWindow.destroy).not.toHaveBeenCalled()
+    expect(invoke.mock.calls.filter(([command]) => command === 'delete_screenshot_file')).toHaveLength(0)
+    const label = createWebviewWindow.mock.calls[0][0]
+    expect(localStorage.getItem(`translation-overlay:${label}`)).toBeNull()
+    overlayReady.error = ''
+    await session.translateSelection(selection)
+    expect(invoke.mock.calls.filter(([command]) => command === 'recognize_screenshot_text')).toHaveLength(1)
+    expect(selectionWindow.destroy).toHaveBeenCalledTimes(1)
+  })
+
+  it('cleans an overlay that never becomes ready without discarding its source', async () => {
+    vi.useFakeTimers()
+    overlayReady.held = true
+    const pending = session.translateSelection(selection)
+    const failure = expect(pending).rejects.toThrow('初始化超时')
+    await vi.waitFor(() => expect(createWebviewWindow).toHaveBeenCalledTimes(1))
+
+    await vi.advanceTimersByTimeAsync(10_000)
+    await failure
+
+    expect(overlayWindow.destroy).toHaveBeenCalledTimes(1)
+    expect(unlistenReady).toHaveBeenCalledTimes(1)
+    expect(selectionWindow.destroy).not.toHaveBeenCalled()
+    expect(invoke.mock.calls.filter(([command]) => command === 'delete_screenshot_file')).toHaveLength(0)
+  })
+
+  it('can retry after a synchronous overlay constructor failure', async () => {
+    createWebviewWindow.mockImplementationOnce(() => {
+      throw new Error('create failed')
+    })
+
+    await expect(session.translateSelection(selection)).rejects.toThrow('create failed')
+    expect(localStorage.getItem(`translation-overlay:${createWebviewWindow.mock.calls[0][0]}`)).toBeNull()
+    expect(selectionWindow.destroy).not.toHaveBeenCalled()
+    await session.translateSelection(selection)
+
+    expect(selectionWindow.destroy).toHaveBeenCalledTimes(1)
+    expect(invoke.mock.calls.filter(([command]) => command === 'recognize_screenshot_text')).toHaveLength(1)
+  })
+
+  it('preserves the capture when ownership transfer fails', async () => {
+    invoke.mockImplementation(async (command: string) => {
+      if (command === 'recognize_screenshot_text')
+        return 'Hello'
+      if (command === 'transfer_screenshot_file')
+        throw new Error('transfer failed')
+    })
+
+    await expect(session.translateSelection(selection)).rejects.toThrow('transfer failed')
+
+    expect(overlayWindow.destroy).toHaveBeenCalledTimes(1)
+    expect(selectionWindow.destroy).not.toHaveBeenCalled()
+    expect(invoke.mock.calls.filter(([command]) => command === 'delete_screenshot_file')).toHaveLength(0)
+    expect(invoke.mock.calls.filter(([command]) => command === 'history_record')).toHaveLength(0)
+  })
+
+  it('finishes if the displayed overlay is closed before ownership transfer', async () => {
+    invoke.mockImplementation(async (command: string) => command === 'recognize_screenshot_text' ? 'Hello' : false)
+
+    await session.translateSelection(selection)
+
+    expect(selectionWindow.destroy).toHaveBeenCalledTimes(1)
+    expect(invoke).toHaveBeenCalledWith('delete_screenshot_file', { imagePath: '/tmp/shot.png' })
+    expect(createWebviewWindow).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not submit again when closing the selection fails after handoff', async () => {
+    selectionWindow.destroy.mockRejectedValueOnce(new Error('close failed'))
+
+    await expect(session.translateSelection(selection)).rejects.toThrow('close failed')
+    await session.translateSelection(selection)
+
+    expect(createWebviewWindow).toHaveBeenCalledTimes(1)
+    expect(translate).toHaveBeenCalledTimes(1)
+    expect(overlayWindow.destroy).not.toHaveBeenCalled()
   })
 })
