@@ -1,5 +1,7 @@
-import { ScanText, Settings as SettingsIcon, X } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { isTauri } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
+import { History as HistoryIcon, ScanText, Settings as SettingsIcon, X } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
 import CopyTextButton from '@/components/CopyText'
 import DictionaryDisplay from '@/components/dictionary-display'
 import TranslateDisplay from '@/components/translate-display'
@@ -10,6 +12,8 @@ import { UpdateToast } from '@/components/update-toast'
 import { NonMacOnly, TitleBarSpacer, WindowTitleBar } from '@/components/WindowTitleBar'
 import { useUpdate } from '@/contexts/UpdateContext'
 import { bindAppWindowClose, startScreenshotTranslation } from '@/lib/screenshot-translation'
+import { bindScreenshotShortcut } from '@/lib/shortcuts'
+import History from './History'
 import Settings from './Settings'
 
 function ModeSwitch() {
@@ -22,13 +26,46 @@ function ModeSwitch() {
 }
 
 export default function TranslationApp() {
+  const isMac = navigator.platform.toLowerCase().includes('mac')
   const [sourceText, setSourceText] = useState('')
   const [showSettings, setShowSettings] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
+  const [historyWarning, setHistoryWarning] = useState('')
   const [settingsInitialSection, setSettingsInitialSection] = useState<'updates' | undefined>()
   const [toastVersion, setToastVersion] = useState<string | null>(null)
   const [lastPromptedVersion, setLastPromptedVersion] = useState<string | null>(null)
   const [screenshotError, setScreenshotError] = useState('')
   const { hasUpdate, updateInfo } = useUpdate()
+
+  const handleScreenshotTranslation = useCallback(async () => {
+    setScreenshotError('')
+    try {
+      await startScreenshotTranslation()
+    }
+    catch (err) {
+      setScreenshotError(err instanceof Error ? err.message : String(err))
+    }
+  }, [])
+
+  useEffect(() => {
+    let disposed = false
+    const stops: (() => void)[] = []
+    const keepListener = (stop: () => void) => disposed ? stop() : stops.push(stop)
+    void bindScreenshotShortcut(() => {
+      if (!disposed)
+        void handleScreenshotTranslation()
+    }, message => !disposed && setScreenshotError(message)).then(keepListener)
+    if (isTauri()) {
+      void listen<string>('history-save-failed', (event) => {
+        if (!disposed)
+          setHistoryWarning(event.payload)
+      }).then(keepListener).catch(() => undefined)
+    }
+    return () => {
+      disposed = true
+      stops.forEach(stop => stop())
+    }
+  }, [handleScreenshotTranslation])
 
   useEffect(() => {
     let disposed = false
@@ -75,16 +112,6 @@ export default function TranslationApp() {
     setSettingsInitialSection(undefined)
   }
 
-  const handleScreenshotTranslation = async () => {
-    setScreenshotError('')
-    try {
-      await startScreenshotTranslation()
-    }
-    catch (err) {
-      setScreenshotError(err instanceof Error ? err.message : String(err))
-    }
-  }
-
   return (
     <>
       <a
@@ -93,9 +120,18 @@ export default function TranslationApp() {
       >
         跳到正文
       </a>
-      <div className="flex h-dvh flex-col" hidden={showSettings}>
+      <div className="flex h-dvh flex-col" hidden={showSettings || showHistory}>
         <Tabs defaultValue="translate" className="flex min-h-0 flex-1 flex-col gap-0">
-          <WindowTitleBar controlsPosition="right" center={<ModeSwitch />}>
+          <WindowTitleBar controlsPosition="right" center={<div className="hidden sm:block"><ModeSwitch /></div>}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowHistory(true)}
+              className="h-7 px-2 text-xs"
+            >
+              <HistoryIcon className="h-4 w-4" />
+              历史
+            </Button>
             <Button
               variant="ghost"
               size="sm"
@@ -112,18 +148,35 @@ export default function TranslationApp() {
               className="h-7 px-2 text-xs"
             >
               <SettingsIcon className="h-4 w-4" />
-              AI 配置
+              设置
             </Button>
           </WindowTitleBar>
           <TitleBarSpacer />
+          {isMac && <div className="px-4 pt-3 sm:hidden"><ModeSwitch /></div>}
           {screenshotError && (
             <div role="alert" className="mx-4 mt-3 rounded-md border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive">
               {screenshotError}
             </div>
           )}
+          {historyWarning && (
+            <div role="status" className="mx-4 mt-3 flex items-center gap-2 text-sm text-amber-700">
+              {historyWarning}
+              <Button variant="ghost" size="sm" onClick={() => setHistoryWarning('')} aria-label="关闭历史保存提示"><X className="h-4 w-4" /></Button>
+            </div>
+          )}
           <NonMacOnly>
-            <div className="flex items-center px-4 pt-3">
+            <div className="flex items-center justify-between px-4 pt-3">
               <ModeSwitch />
+              <div className="flex gap-1">
+                <Button variant="ghost" size="sm" onClick={() => setShowHistory(true)}>
+                  <HistoryIcon className="h-4 w-4" />
+                  历史
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setShowSettings(true)}>
+                  <SettingsIcon className="h-4 w-4" />
+                  设置
+                </Button>
+              </div>
             </div>
           </NonMacOnly>
           <div id="workspace" className="grid min-h-0 flex-1 grid-rows-[minmax(0,0.9fr)_minmax(0,1.1fr)] gap-3 overflow-hidden px-4 pt-3 pb-5 md:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)] md:grid-rows-1">
@@ -178,6 +231,7 @@ export default function TranslationApp() {
       {showSettings && (
         <Settings onBack={handleCloseSettings} initialSection={settingsInitialSection} />
       )}
+      {showHistory && <History onBack={() => setShowHistory(false)} />}
     </>
   )
 }

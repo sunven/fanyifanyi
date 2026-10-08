@@ -42,14 +42,14 @@ describe('translate', () => {
     invoke.mockResolvedValue('你好！')
   })
 
-  it('returns an empty string without calling an engine for blank text', async () => {
-    await expect(translate('  \n', 'desk')).resolves.toBe('')
+  it('returns no result without calling an engine for blank text', async () => {
+    await expect(translate('  \n', 'desk')).resolves.toBeNull()
 
     expect(invoke).not.toHaveBeenCalled()
   })
 
   it('sends the desk bilingual prompt and active model to the AI adapter', async () => {
-    await expect(translate('Hello!', 'desk')).resolves.toBe('你好！')
+    await expect(translate('Hello!', 'desk')).resolves.toMatchObject({ text: '你好！', engine: { provider: 'ai', modelId: 'model-1' } })
 
     expect(invoke).toHaveBeenCalledWith('translate_with_ai', {
       baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
@@ -167,5 +167,14 @@ describe('translate', () => {
     invoke.mockRejectedValue('认证失败，请检查 API Key')
 
     await expect(translate('Hello!', 'desk')).rejects.toThrow('认证失败，请检查 API Key')
+  })
+
+  it('returns the actual engine with a one-request override', async () => {
+    loadTranslationSettings.mockResolvedValue({ ...settings, provider: 'microsoft' })
+
+    const result = await translate('Hello', 'desk', undefined, { provider: 'microsoft' })
+
+    expect(loadTranslationSettings).toHaveBeenCalledWith({ provider: 'microsoft' })
+    expect(result).toEqual({ text: '你好！', engine: { provider: 'microsoft' } })
   })
 })

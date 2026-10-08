@@ -2,6 +2,9 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Settings from '../Settings'
 
+vi.mock('@/components/HistorySettings', () => ({ default: () => null }))
+vi.mock('@/components/ShortcutSettings', () => ({ default: () => null }))
+
 const { testAIConfig } = vi.hoisted(() => ({
   testAIConfig: vi.fn(),
 }))

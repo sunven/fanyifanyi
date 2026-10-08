@@ -152,6 +152,7 @@ describe('config', () => {
       modelId: 'model-1',
       baseURL: 'https://example.com/v1',
       model: 'one',
+      modelName: 'Model One',
     })
     expect(secureStorageGet).not.toHaveBeenCalled()
   })
@@ -185,6 +186,16 @@ describe('catalog writes stay off unrelated secrets', () => {
   beforeEach(() => {
     localStorage.clear()
     secureStorageGet.mockClear()
+  })
+
+  it('selects a model for one request without changing defaults or revealing keys', async () => {
+    await seedTwoModels()
+
+    const selected = await loadTranslationSettings({ provider: 'ai', modelId: 'model-2' })
+
+    expect(selected).toMatchObject({ provider: 'ai', modelId: 'model-2', model: 'two', modelName: 'Model Two' })
+    expect(await loadTranslationSettings()).toMatchObject({ provider: 'ai', modelId: 'model-1' })
+    expect(secureStorageGet).not.toHaveBeenCalled()
   })
 
   it('changes the translation provider without reading saved keys', async () => {

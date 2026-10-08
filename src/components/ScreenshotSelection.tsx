@@ -1,9 +1,12 @@
+import type { TranslationTarget } from '@/lib/config'
 import type { ScreenRegion } from '@/lib/screenshot-translation'
 import { X } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import TranslationRetry from '@/components/TranslationRetry'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { cancelSelection, discardSelection, revealSelectionWindow, selectionFrame, translateSelection } from '@/lib/screenshot-translation'
+import { translationEngineLabel, TranslationError } from '@/lib/translate'
 
 function normalizeSelection(startX: number, startY: number, endX: number, endY: number): ScreenRegion {
   return {
@@ -20,6 +23,7 @@ export default function ScreenshotSelection() {
   const [dragStart, setDragStart] = useState<{ x: number, y: number } | null>(null)
   const [selection, setSelection] = useState<ScreenRegion | null>(null)
   const [isTranslating, setIsTranslating] = useState(false)
+  const retryTarget = useRef<TranslationTarget | undefined>()
 
   useEffect(() => {
     void revealSelectionWindow().catch((err) => {
@@ -46,7 +50,7 @@ export default function ScreenshotSelection() {
 
   const selectedEnough = selection && selection.width >= 8 && selection.height >= 8
 
-  async function handleTranslate() {
+  async function handleTranslate(target?: TranslationTarget) {
     if (!selection || !frame.imageSrc || isTranslating) {
       return
     }
@@ -57,10 +61,17 @@ export default function ScreenshotSelection() {
       requestAnimationFrame(() => resolve())
     })
     try {
-      await translateSelection(selection)
+      retryTarget.current = target ?? retryTarget.current
+      await translateSelection(selection, retryTarget.current)
     }
     catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      if (err instanceof TranslationError) {
+        retryTarget.current = err.engine
+        setError(`${translationEngineLabel(err.engine)}：${err.message}`)
+      }
+      else {
+        setError(err instanceof Error ? err.message : String(err))
+      }
     }
     finally {
       setIsTranslating(false)
@@ -75,6 +86,7 @@ export default function ScreenshotSelection() {
           return
         }
         setError('')
+        retryTarget.current = undefined
         setDragStart({ x: event.clientX, y: event.clientY })
         setSelection(normalizeSelection(event.clientX, event.clientY, event.clientX, event.clientY))
       }}
@@ -120,7 +132,7 @@ export default function ScreenshotSelection() {
           }}
           onMouseDown={event => event.stopPropagation()}
         >
-          <Button size="sm" onClick={handleTranslate} disabled={isTranslating}>
+          <Button size="sm" onClick={() => void handleTranslate()} disabled={isTranslating}>
             {isTranslating ? '翻译中...' : '翻译'}
           </Button>
           <Button size="icon" variant="ghost" onClick={() => void cancelSelection()} aria-label="取消截图翻译">
@@ -137,8 +149,12 @@ export default function ScreenshotSelection() {
         </div>
       )}
       {error && (
-        <div className="absolute bottom-4 left-1/2 max-w-[min(560px,calc(100vw-32px))] -translate-x-1/2 rounded bg-red-950/90 px-3 py-2 text-sm shadow-lg">
-          {error}
+        <div
+          className="absolute bottom-4 left-1/2 w-max max-w-[calc(100vw-32px)] -translate-x-1/2 space-y-2 rounded bg-red-950/95 px-3 py-2 text-sm shadow-lg"
+          onMouseDown={event => event.stopPropagation()}
+        >
+          <p role="alert">{error}</p>
+          {selectedEnough && <TranslationRetry onRetry={target => void handleTranslate(target)} disabled={isTranslating} />}
         </div>
       )}
     </div>

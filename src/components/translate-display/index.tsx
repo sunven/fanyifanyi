@@ -1,10 +1,12 @@
+import type { TranslationTarget } from '@/lib/config'
+import type { TranslationResult } from '@/lib/translate'
 import { StopCircle } from 'lucide-react'
-import { useRef, useState } from 'react'
-import { useDebounce } from 'react-use'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Streamdown } from 'streamdown'
 import CopyTextButton from '@/components/CopyText'
-import { logger } from '@/lib/logger'
-import { translate } from '@/lib/translate'
+import TranslationRetry from '@/components/TranslationRetry'
+import { recordTranslation } from '@/lib/history'
+import { translate, translationEngineLabel, TranslationError } from '@/lib/translate'
 
 interface TranslateDisplayProps {
   q: string
@@ -22,68 +24,89 @@ function TranslationSkeleton() {
 }
 
 export default function TranslateDisplay({ q }: TranslateDisplayProps) {
-  const [translatedText, setTranslatedText] = useState('')
+  const [result, setResult] = useState<TranslationResult | null>(null)
   const [error, setError] = useState('')
-  const [isStreaming, setIsStreaming] = useState(false)
+  const [historyError, setHistoryError] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
   const abortControllerRef = useRef<AbortController | null>(null)
+  const requestRef = useRef(0)
+  const retryTargetRef = useRef<TranslationTarget | undefined>()
 
-  const translateText = async () => {
-    if (!q) {
-      setTranslatedText('')
-      setError('')
-      setIsStreaming(false)
-      // 取消之前的翻译
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort()
-      }
+  const translateText = useCallback(async (target?: TranslationTarget) => {
+    if (!q.trim())
       return
-    }
-
-    // 取消之前的翻译
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort()
-    }
-
-    // 创建新的 AbortController
-    abortControllerRef.current = new AbortController()
-
-    setIsStreaming(true)
+    abortControllerRef.current?.abort()
+    const controller = new AbortController()
+    abortControllerRef.current = controller
+    const request = ++requestRef.current
+    const selected = target ?? retryTargetRef.current
+    retryTargetRef.current = selected
+    setIsLoading(true)
     setError('')
-    setTranslatedText('')
+    setHistoryError('')
+    setResult(null)
     try {
-      const translated = await translate(q, 'desk', abortControllerRef.current.signal)
-      setTranslatedText(translated)
-    }
-    catch (error) {
-      // 如果是 AbortError，忽略它
-      if (error instanceof Error && error.name === 'AbortError') {
+      const translated = await translate(q, 'desk', controller.signal, selected)
+      if (request !== requestRef.current || controller.signal.aborted || !translated)
         return
+      setResult(translated)
+      try {
+        await recordTranslation(q, 'desk', translated)
       }
-      logger.error('翻译失败', error)
-      setError('翻译失败。请检查模型配置和网络后再试。')
+      catch {
+        if (request === requestRef.current && !controller.signal.aborted)
+          setHistoryError('译文已完成，但未能保存到本地历史。')
+      }
+    }
+    catch (err) {
+      if (request !== requestRef.current || controller.signal.aborted)
+        return
+      if (err instanceof TranslationError) {
+        retryTargetRef.current = err.engine
+        setError(`${translationEngineLabel(err.engine)}：${err.message}`)
+      }
+      else {
+        setError(err instanceof Error ? err.message : String(err))
+      }
     }
     finally {
-      setIsStreaming(false)
+      if (request === requestRef.current && !controller.signal.aborted)
+        setIsLoading(false)
     }
-  }
+  }, [q])
+
+  useEffect(() => {
+    retryTargetRef.current = undefined
+    setResult(null)
+    setError('')
+    setHistoryError('')
+    setIsLoading(false)
+    const timer = setTimeout(() => {
+      void translateText()
+    }, 1000)
+    return () => {
+      clearTimeout(timer)
+      abortControllerRef.current?.abort()
+    }
+  }, [translateText])
 
   const handleStop = () => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort()
-      setIsStreaming(false)
-    }
+    ++requestRef.current
+    abortControllerRef.current?.abort()
+    setIsLoading(false)
   }
-
-  useDebounce(translateText, 1000, [q],
-  )
+  const translatedText = result?.text ?? ''
 
   return (
     <div className="flex h-full flex-col gap-2 p-4">
       <div className="flex items-center justify-between">
-        <label className="text-xs font-medium tracking-wide text-muted-foreground">翻译结果</label>
+        <div className="text-xs font-medium tracking-wide text-muted-foreground">
+          翻译结果
+          {result && <span className="ml-2 font-normal">{translationEngineLabel(result.engine)}</span>}
+        </div>
         <div className="flex items-center gap-1">
           <CopyTextButton text={translatedText} />
-          {isStreaming && (
+          {isLoading && (
             <button
               type="button"
               onClick={handleStop}
@@ -95,6 +118,7 @@ export default function TranslateDisplay({ q }: TranslateDisplayProps) {
           )}
         </div>
       </div>
+      {historyError && <p role="status" className="text-xs text-amber-700">{historyError}</p>}
       <div className="prose prose-neutral dark:prose-invert max-w-none flex-1 overflow-y-auto pr-2 break-words prose-p:leading-relaxed prose-headings:tracking-tight">
         {!q && !translatedText && !error
           ? (
@@ -104,9 +128,14 @@ export default function TranslateDisplay({ q }: TranslateDisplayProps) {
             )
           : null}
         {error
-          ? <p role="alert" className="text-sm text-destructive">{error}</p>
+          ? (
+              <div className="space-y-3">
+                <p role="alert" className="text-sm text-destructive">{error}</p>
+                <TranslationRetry onRetry={target => void translateText(target)} disabled={isLoading} />
+              </div>
+            )
           : null}
-        {isStreaming && !translatedText
+        {isLoading && !translatedText
           ? (
               <div aria-live="polite">
                 <p className="sr-only">翻译中</p>
@@ -117,7 +146,7 @@ export default function TranslateDisplay({ q }: TranslateDisplayProps) {
         {translatedText
           ? (
               <Streamdown
-                isAnimating={isStreaming}
+                isAnimating={isLoading}
                 controls={true}
               >
                 {translatedText}

@@ -27,7 +27,8 @@ const { translate, updateState } = vi.hoisted(() => {
   }
 })
 
-vi.mock('@/lib/translate', () => ({
+vi.mock('@/lib/translate', async importOriginal => ({
+  ...await importOriginal<typeof import('@/lib/translate')>(),
   translate,
 }))
 
@@ -59,6 +60,15 @@ vi.mock('../Settings', () => ({
   ),
 }))
 
+vi.mock('../History', () => ({
+  default: ({ onBack }: { onBack: () => void }) => (
+    <div>
+      <h1>历史</h1>
+      <button type="button" onClick={onBack}>返回</button>
+    </div>
+  ),
+}))
+
 vi.mock('streamdown', () => ({
   Streamdown: ({ children }: { children: string }) => <div>{children}</div>,
 }))
@@ -74,10 +84,10 @@ vi.mock('@/contexts/UpdateContext', () => {
   return updateContextModule
 })
 
-describe('home settings navigation', () => {
+describe('home navigation', () => {
   beforeEach(() => {
     vi.useFakeTimers()
-    translate.mockResolvedValue('translated text')
+    translate.mockResolvedValue({ text: 'translated text', engine: { provider: 'google' } })
   })
 
   afterEach(() => {
@@ -85,7 +95,7 @@ describe('home settings navigation', () => {
     vi.clearAllMocks()
   })
 
-  it('does not translate the same text again after returning from settings', async () => {
+  it.each(['设置', '历史'])('preserves the input and result after returning from %s', async (page) => {
     render(<Home />)
 
     fireEvent.change(screen.getByPlaceholderText('输入要翻译的文本...'), {
@@ -97,8 +107,8 @@ describe('home settings navigation', () => {
     })
     expect(translate).toHaveBeenCalledTimes(1)
 
-    fireEvent.click(screen.getByRole('button', { name: /AI 配置/ }))
-    expect(screen.getByRole('heading', { name: '设置' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: page }))
+    expect(screen.getByRole('heading', { name: page })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '返回' }))
 
@@ -107,6 +117,7 @@ describe('home settings navigation', () => {
     })
 
     expect(screen.getByPlaceholderText('输入要翻译的文本...')).toHaveValue('hello')
+    expect(screen.getByText('translated text')).toBeVisible()
     expect(translate).toHaveBeenCalledTimes(1)
   })
 

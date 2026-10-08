@@ -2,6 +2,11 @@ import { secureStorageGet, secureStorageRemove, secureStorageSet } from './secur
 
 export type TranslationProvider = 'ai' | 'google' | 'microsoft'
 
+export interface TranslationTarget {
+  provider: TranslationProvider
+  modelId?: string
+}
+
 export interface AIConfig {
   id: string
   name: string
@@ -21,6 +26,7 @@ export interface TranslationSettings {
   modelId: string
   baseURL: string
   model: string
+  modelName?: string
 }
 
 const LEGACY_CONFIG_KEY = 'ai_configs'
@@ -238,13 +244,18 @@ async function hydrateConfig(metadata: StoredConfigMetadata): Promise<AIConfigs>
   }) ?? cloneConfig(DEFAULT_CONFIG)
 }
 
-function translationSettingsFromMetadata(metadata: StoredConfigMetadata): TranslationSettings {
-  const active = metadata.models.find(model => model.id === metadata.activeModelId) ?? metadata.models[0]
+function translationSettingsFromMetadata(metadata: StoredConfigMetadata, target?: TranslationTarget): TranslationSettings {
+  const selectedId = target?.modelId ?? metadata.activeModelId
+  const active = metadata.models.find(model => model.id === selectedId) ?? (!target?.modelId ? metadata.models[0] : undefined)
+  if (!active) {
+    throw new Error('此 AI 模型已删除，请选择其他引擎')
+  }
   return {
-    provider: sanitizeTranslationProvider(metadata.translationProvider),
+    provider: target?.provider ?? sanitizeTranslationProvider(metadata.translationProvider),
     modelId: active.id,
     baseURL: active.baseURL,
     model: active.model,
+    modelName: active.name,
   }
 }
 
@@ -274,26 +285,20 @@ export async function loadAIConfigs(): Promise<AIConfigs> {
   return migrated ?? cloneConfig(DEFAULT_CONFIG)
 }
 
-export async function loadTranslationSettings(): Promise<TranslationSettings> {
-  const metadata = readStoredMetadata()
-  if (metadata) {
-    return translationSettingsFromMetadata(metadata)
-  }
+export async function loadTranslationSettings(target?: TranslationTarget): Promise<TranslationSettings> {
+  return translationSettingsFromMetadata(await ensureMetadata(), target)
+}
 
-  await migrateLegacyConfig()
-  const migrated = readStoredMetadata()
-  if (migrated) {
-    return translationSettingsFromMetadata(migrated)
-  }
-
-  const defaults = cloneConfig(DEFAULT_CONFIG)
-  const model = defaults.models[0]
-  return {
-    provider: defaults.translationProvider,
-    modelId: model.id,
-    baseURL: model.baseURL,
-    model: model.model,
-  }
+export async function loadTranslationTargets(): Promise<{ target: TranslationTarget, label: string }[]> {
+  const metadata = await ensureMetadata()
+  return [
+    { target: { provider: 'google' }, label: 'Google 翻译' },
+    { target: { provider: 'microsoft' }, label: 'Microsoft 翻译' },
+    ...metadata.models.map(model => ({
+      target: { provider: 'ai' as const, modelId: model.id },
+      label: model.name,
+    })),
+  ]
 }
 
 export async function saveAIConfigs(configs: AIConfigs): Promise<void> {

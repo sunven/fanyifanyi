@@ -1,6 +1,9 @@
+import type { TranslationTarget } from './config'
 import { convertFileSrc, invoke, isTauri } from '@tauri-apps/api/core'
+import { emitTo } from '@tauri-apps/api/event'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { cursorPosition, getCurrentWindow, monitorFromPoint } from '@tauri-apps/api/window'
+import { recordTranslation } from './history'
 import { translate } from './translate'
 
 const SCREENSHOT_SELECTION_WINDOW_PREFIX = 'screenshot-selection-'
@@ -68,6 +71,8 @@ type SubmissionPhase = 'idle' | 'working' | 'opening' | 'opened' | 'cancelled'
 
 let submissionPhase: SubmissionPhase = 'idle'
 let selectionWindowDestroyed = false
+let cachedRecognition: { key: string, text: string } | null = null
+let startingScreenshot = false
 
 function submissionWasCancelled() {
   return submissionPhase === 'cancelled'
@@ -122,6 +127,32 @@ export async function bindAppWindowClose(): Promise<() => void> {
 }
 
 export async function startScreenshotTranslation() {
+  if (startingScreenshot)
+    return
+  if (!isTauri())
+    throw new Error('截图翻译仅在桌面应用中可用')
+  startingScreenshot = true
+  try {
+    const existing = (await WebviewWindow.getAll()).find(win => win.label.startsWith(SCREENSHOT_SELECTION_WINDOW_PREFIX))
+    if (existing) {
+      await existing.setFocus()
+      return
+    }
+    await captureAndOpenSelection()
+  }
+  finally {
+    startingScreenshot = false
+  }
+}
+
+async function restoreAppWindow() {
+  const appWindow = getCurrentWindow()
+  await appWindow.unminimize().catch(() => undefined)
+  await appWindow.show().catch(() => undefined)
+  await appWindow.setFocus().catch(() => undefined)
+}
+
+async function captureAndOpenSelection() {
   const appWindow = getCurrentWindow()
   const position = await cursorPosition()
   const monitor = await monitorFromPoint(position.x, position.y)
@@ -144,7 +175,7 @@ export async function startScreenshotTranslation() {
     })
   }
   catch (err) {
-    await appWindow.show().catch(() => undefined)
+    await restoreAppWindow()
     throw err
   }
 
@@ -188,7 +219,7 @@ export async function startScreenshotTranslation() {
   }
   catch (err) {
     await deleteScreenshotFile(capture.imagePath).catch(() => undefined)
-    await appWindow.show().catch(() => undefined)
+    await restoreAppWindow()
     throw err
   }
 }
@@ -271,6 +302,7 @@ export function selectionFrame() {
 }
 
 export async function discardSelection() {
+  cachedRecognition = null
   const { imagePath } = readSelectionWindowParams()
   if (!imagePath) {
     return
@@ -287,33 +319,49 @@ export async function cancelSelection() {
   await destroySelectionWindow()
 }
 
-export async function translateSelection(selection: ScreenRegion) {
-  if (submissionPhase === 'cancelled' || submissionPhase === 'opening' || submissionPhase === 'opened') {
+export async function translateSelection(selection: ScreenRegion, target?: TranslationTarget) {
+  if (submissionPhase !== 'idle') {
     return
   }
 
   submissionPhase = 'working'
   const params = readSelectionWindowParams()
   try {
-    const recognizedText = await recognizeScreenshotText(
-      params.imagePath,
-      physicalSelection(selection, params.scaleFactor),
-      params.screenWidth,
-      params.screenHeight,
-    )
+    const key = JSON.stringify([params.imagePath, selection.x, selection.y, selection.width, selection.height])
+    if (cachedRecognition?.key !== key) {
+      cachedRecognition = null
+      const text = await recognizeScreenshotText(
+        params.imagePath,
+        physicalSelection(selection, params.scaleFactor),
+        params.screenWidth,
+        params.screenHeight,
+      )
+      if (submissionWasCancelled())
+        return
+      cachedRecognition = { key, text }
+    }
+    const recognizedText = cachedRecognition.text
     if (submissionWasCancelled()) {
       return
     }
-    const translatedText = await translate(recognizedText, 'screenshot')
+    const translated = await translate(recognizedText, 'screenshot', undefined, target)
     if (submissionWasCancelled()) {
       return
     }
     submissionPhase = 'opening'
     await openTranslationOverlay({
       ...logicalOverlayRect(selection, params),
-      text: translatedText,
+      text: translated?.text ?? '',
     })
     submissionPhase = 'opened'
+    if (translated) {
+      try {
+        await recordTranslation(recognizedText, 'screenshot', translated)
+      }
+      catch {
+        await emitTo('main', 'history-save-failed', '截图译文已完成，但未能保存到本地历史。').catch(() => undefined)
+      }
+    }
     await discardSelection()
     await destroySelectionWindow()
   }

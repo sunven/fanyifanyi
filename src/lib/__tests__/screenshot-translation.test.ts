@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const {
   appWindow,
   createWebviewWindow,
+  emitTo,
   holdOverlay,
   invoke,
   selectionWindow,
@@ -12,6 +13,7 @@ const {
     show: vi.fn(),
   },
   createWebviewWindow: vi.fn(),
+  emitTo: vi.fn(),
   holdOverlay: {
     current: false,
     release: undefined as (() => void) | undefined,
@@ -29,6 +31,10 @@ vi.mock('@tauri-apps/api/core', () => ({
   convertFileSrc: (path: string) => `asset://${path}`,
   invoke,
   isTauri: () => true,
+}))
+
+vi.mock('@tauri-apps/api/event', () => ({
+  emitTo,
 }))
 
 vi.mock('@tauri-apps/api/webviewWindow', () => ({
@@ -91,8 +97,9 @@ describe('screenshot translation session', () => {
     vi.resetModules()
     holdOverlay.current = false
     holdOverlay.release = undefined
+    emitTo.mockResolvedValue(undefined)
     invoke.mockResolvedValue('Hello')
-    translate.mockResolvedValue('你好')
+    translate.mockResolvedValue({ text: '你好', engine: { provider: 'google' } })
     selectionWindow.show.mockResolvedValue(undefined)
     selectionWindow.setFocus.mockResolvedValue(undefined)
     selectionWindow.destroy.mockResolvedValue(undefined)
@@ -134,7 +141,15 @@ describe('screenshot translation session', () => {
       imageWidth: 1600,
       imageHeight: 1000,
     })
-    expect(translate).toHaveBeenCalledWith('Hello', 'screenshot')
+    expect(translate).toHaveBeenCalledWith('Hello', 'screenshot', undefined, undefined)
+    expect(invoke).toHaveBeenCalledWith('history_record', {
+      entry: expect.objectContaining({
+        kind: 'screenshot',
+        sourceText: 'Hello',
+        translatedText: '你好',
+        engine: { provider: 'google' },
+      }),
+    })
     expect(createWebviewWindow).toHaveBeenCalledWith(
       expect.stringMatching(/^translation-overlay-/),
       expect.objectContaining({
@@ -152,11 +167,11 @@ describe('screenshot translation session', () => {
 
   it('opens an overlay for empty ocr text and still discards the capture', async () => {
     invoke.mockResolvedValueOnce('')
-    translate.mockResolvedValueOnce('')
+    translate.mockResolvedValueOnce(null)
 
     await session.translateSelection(selection)
 
-    expect(translate).toHaveBeenCalledWith('', 'screenshot')
+    expect(translate).toHaveBeenCalledWith('', 'screenshot', undefined, undefined)
     expect(createWebviewWindow).toHaveBeenCalledTimes(1)
     expect(invoke).toHaveBeenCalledWith('delete_screenshot_file', {
       imagePath: '/tmp/shot.png',
@@ -184,6 +199,99 @@ describe('screenshot translation session', () => {
     expect(selectionWindow.destroy).toHaveBeenCalledTimes(1)
   })
 
+  it('reuses recognized text when retrying the same region with another engine', async () => {
+    translate.mockRejectedValueOnce(new Error('Google 不可用'))
+    await expect(session.translateSelection(selection)).rejects.toThrow('Google 不可用')
+
+    await session.translateSelection(selection, { provider: 'microsoft' })
+
+    expect(invoke.mock.calls.filter(([command]) => command === 'recognize_screenshot_text')).toHaveLength(1)
+    expect(translate).toHaveBeenLastCalledWith('Hello', 'screenshot', undefined, { provider: 'microsoft' })
+    expect(invoke.mock.calls.filter(([command]) => command === 'history_record')).toHaveLength(1)
+  })
+
+  it('recognizes again when the region changes after a translation failure', async () => {
+    translate.mockRejectedValueOnce(new Error('翻译失败'))
+    await expect(session.translateSelection(selection)).rejects.toThrow('翻译失败')
+    invoke.mockResolvedValueOnce('Different region')
+
+    await session.translateSelection({ ...selection, x: 50 })
+
+    const recognitions = invoke.mock.calls.filter(([command]) => command === 'recognize_screenshot_text')
+    expect(recognitions).toHaveLength(2)
+    expect(recognitions[1]).toEqual(['recognize_screenshot_text', {
+      imagePath: '/tmp/shot.png',
+      imageRegion: { x: 100, y: 40, width: 60, height: 80 },
+      imageWidth: 1600,
+      imageHeight: 1000,
+    }])
+    expect(translate).toHaveBeenLastCalledWith('Different region', 'screenshot', undefined, undefined)
+    expect(invoke).toHaveBeenCalledWith('history_record', {
+      entry: expect.objectContaining({ sourceText: 'Different region' }),
+    })
+  })
+
+  it('retries recognition after an ocr failure without discarding the selection', async () => {
+    invoke.mockRejectedValueOnce(new Error('OCR failed'))
+
+    await expect(session.translateSelection(selection)).rejects.toThrow('OCR failed')
+
+    expect(translate).not.toHaveBeenCalled()
+    expect(createWebviewWindow).not.toHaveBeenCalled()
+    expect(selectionWindow.destroy).not.toHaveBeenCalled()
+    expect(invoke.mock.calls.map(([command]) => command)).toEqual(['recognize_screenshot_text'])
+
+    await session.translateSelection(selection)
+
+    expect(invoke.mock.calls.filter(([command]) => command === 'recognize_screenshot_text')).toHaveLength(2)
+    expect(translate).toHaveBeenCalledTimes(1)
+    expect(invoke.mock.calls.filter(([command]) => command === 'history_record')).toHaveLength(1)
+    expect(createWebviewWindow).toHaveBeenCalledTimes(1)
+    expect(selectionWindow.destroy).toHaveBeenCalledTimes(1)
+  })
+
+  it('ignores duplicate submissions while recognition and translation are pending', async () => {
+    let finishTranslation: (() => void) | undefined
+    translate.mockImplementationOnce(() => new Promise((resolve) => {
+      finishTranslation = () => resolve({ text: '你好', engine: { provider: 'google' } })
+    }))
+
+    const pending = session.translateSelection(selection)
+    await session.translateSelection(selection)
+    await vi.waitFor(() => expect(translate).toHaveBeenCalledTimes(1))
+    await session.translateSelection(selection)
+    finishTranslation?.()
+    await pending
+    await session.translateSelection(selection)
+
+    expect(invoke.mock.calls.filter(([command]) => command === 'recognize_screenshot_text')).toHaveLength(1)
+    expect(translate).toHaveBeenCalledTimes(1)
+    expect(invoke.mock.calls.filter(([command]) => command === 'history_record')).toHaveLength(1)
+    expect(createWebviewWindow).toHaveBeenCalledTimes(1)
+    expect(selectionWindow.destroy).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps a successful overlay and closes the selection when saving history fails', async () => {
+    invoke.mockImplementation((command: string) => {
+      if (command === 'recognize_screenshot_text')
+        return Promise.resolve('Hello')
+      if (command === 'history_record')
+        return Promise.reject(new Error('disk full'))
+      return Promise.resolve()
+    })
+
+    await expect(session.translateSelection(selection)).resolves.toBeUndefined()
+
+    expect(createWebviewWindow).toHaveBeenCalledTimes(1)
+    expect(invoke.mock.calls.filter(([command]) => command === 'history_record')).toHaveLength(1)
+    expect(emitTo).toHaveBeenCalledWith('main', 'history-save-failed', expect.any(String))
+    expect(invoke).toHaveBeenCalledWith('delete_screenshot_file', { imagePath: '/tmp/shot.png' })
+    expect(selectionWindow.destroy).toHaveBeenCalledTimes(1)
+    const label = createWebviewWindow.mock.calls[0][0]
+    window.history.replaceState({}, '', `/?window=translation-overlay&label=${label}`)
+    expect(session.takeOverlayText()).toBe('你好')
+  })
+
   it('voids a submit that has not opened the overlay', async () => {
     let finishRecognize: (value: string) => void = () => {}
     invoke.mockImplementation((command: string) => {
@@ -205,6 +313,25 @@ describe('screenshot translation session', () => {
     expect(invoke).toHaveBeenCalledWith('delete_screenshot_file', {
       imagePath: '/tmp/shot.png',
     })
+    expect(selectionWindow.destroy).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not open an overlay or save history when cancelled while awaiting translation', async () => {
+    let finishTranslation: (() => void) | undefined
+    translate.mockImplementationOnce(() => new Promise((resolve) => {
+      finishTranslation = () => resolve({ text: '你好', engine: { provider: 'google' } })
+    }))
+
+    const pending = session.translateSelection(selection)
+    await vi.waitFor(() => expect(translate).toHaveBeenCalledTimes(1))
+    await session.cancelSelection()
+    finishTranslation?.()
+    await pending
+
+    expect(createWebviewWindow).not.toHaveBeenCalled()
+    expect(invoke.mock.calls.filter(([command]) => command === 'history_record')).toHaveLength(0)
+    expect(invoke.mock.calls.filter(([command]) => command === 'delete_screenshot_file')).toHaveLength(1)
+    expect(emitTo).not.toHaveBeenCalled()
     expect(selectionWindow.destroy).toHaveBeenCalledTimes(1)
   })
 

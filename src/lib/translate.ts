@@ -1,9 +1,32 @@
-import type { TranslationSettings } from './config'
+import type { TranslationSettings, TranslationTarget } from './config'
 import { invoke } from '@tauri-apps/api/core'
 import { loadTranslationSettings } from './config'
 import { logger } from './logger'
 
 export type TranslationKind = 'desk' | 'screenshot'
+
+export interface TranslationEngine extends TranslationTarget {
+  modelName?: string
+}
+
+export interface TranslationResult {
+  text: string
+  engine: TranslationEngine
+}
+
+export class TranslationError extends Error {
+  constructor(message: string, readonly engine: TranslationEngine) {
+    super(message)
+    this.name = 'TranslationError'
+  }
+}
+
+export function translationEngineLabel(engine: TranslationEngine) {
+  if (engine.provider === 'ai') {
+    return engine.modelName ?? 'AI 翻译'
+  }
+  return engine.provider === 'google' ? 'Google 翻译' : 'Microsoft 翻译'
+}
 
 function isAbortError(err: unknown) {
   return err instanceof Error && err.name === 'AbortError'
@@ -87,34 +110,38 @@ export async function translate(
   text: string,
   kind: TranslationKind,
   signal?: AbortSignal,
-): Promise<string> {
+  target?: TranslationTarget,
+): Promise<TranslationResult | null> {
   if (signal?.aborted) {
     throw cancelledTranslation()
   }
   if (!text.trim()) {
-    return ''
+    return null
   }
 
-  const settings = await loadTranslationSettings()
+  const settings = await loadTranslationSettings(target)
   if (signal?.aborted) {
     throw cancelledTranslation()
   }
 
+  const engine: TranslationEngine = settings.provider === 'ai'
+    ? { provider: 'ai', modelId: settings.modelId, modelName: settings.modelName ?? settings.model }
+    : { provider: settings.provider }
   try {
     const content = await requestTranslation(text, kind, settings)
     if (signal?.aborted) {
       throw cancelledTranslation()
     }
-    return content
+    return {
+      text: content,
+      engine,
+    }
   }
   catch (err) {
     if (signal?.aborted || isAbortError(err)) {
       throw cancelledTranslation()
     }
     logger.error('Tauri 翻译请求失败', err)
-    if (typeof err === 'string') {
-      throw new TypeError(err)
-    }
-    throw err
+    throw new TranslationError(err instanceof Error ? err.message : String(err), engine)
   }
 }

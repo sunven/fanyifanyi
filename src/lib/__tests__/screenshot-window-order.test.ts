@@ -16,6 +16,8 @@ const {
     hide: vi.fn(),
     onCloseRequested: vi.fn(),
     show: vi.fn(),
+    unminimize: vi.fn(),
+    setFocus: vi.fn(),
   },
   createWebviewWindow: vi.fn(),
   cursorPosition: vi.fn(),
@@ -56,8 +58,8 @@ vi.mock('@tauri-apps/api/webviewWindow', () => ({
   },
 }))
 
-vi.mock('../config', () => ({
-  loadTranslationSettings: vi.fn(),
+vi.mock('../translate', () => ({
+  translate: vi.fn(),
 }))
 
 describe('screenshot selection window order', () => {
@@ -67,6 +69,9 @@ describe('screenshot selection window order', () => {
     isTauri.mockImplementation(() => true)
     appWindow.hide.mockResolvedValue(undefined)
     appWindow.show.mockResolvedValue(undefined)
+    appWindow.unminimize.mockResolvedValue(undefined)
+    appWindow.setFocus.mockResolvedValue(undefined)
+    getAllWindows.mockResolvedValue([])
     appWindow.destroy.mockResolvedValue(undefined)
     appWindow.onCloseRequested.mockResolvedValue(vi.fn())
     cursorPosition.mockResolvedValue({ x: 120, y: 80 })
@@ -107,7 +112,46 @@ describe('screenshot selection window order', () => {
     expect(appWindow.show).not.toHaveBeenCalled()
   })
 
-  it('restores the main window when screen capture fails', async () => {
+  it('captures only once when the shortcut is repeated during preparation', async () => {
+    let finishCapture: (() => void) | undefined
+    invoke.mockImplementationOnce(() => new Promise((resolve) => {
+      finishCapture = () => resolve({ imagePath: '/tmp/fanyifanyi-screen-order.png' })
+    }))
+
+    const opening = startScreenshotTranslation()
+    await startScreenshotTranslation()
+    await vi.advanceTimersByTimeAsync(120)
+    await startScreenshotTranslation()
+    finishCapture?.()
+    await opening
+
+    expect(getAllWindows).toHaveBeenCalledTimes(1)
+    expect(invoke.mock.calls.filter(([command]) => command === 'capture_screen_region')).toHaveLength(1)
+    expect(createWebviewWindow).toHaveBeenCalledTimes(1)
+    expect(appWindow.hide).toHaveBeenCalledTimes(1)
+  })
+
+  it('focuses an existing selection window without taking another screenshot', async () => {
+    const existing = {
+      label: 'screenshot-selection-existing',
+      setFocus: vi.fn().mockResolvedValue(undefined),
+    }
+    getAllWindows.mockResolvedValue([
+      { label: 'main' },
+      { label: 'translation-overlay-existing' },
+      existing,
+    ])
+
+    await startScreenshotTranslation()
+
+    expect(existing.setFocus).toHaveBeenCalledTimes(1)
+    expect(cursorPosition).not.toHaveBeenCalled()
+    expect(invoke).not.toHaveBeenCalled()
+    expect(createWebviewWindow).not.toHaveBeenCalled()
+    expect(appWindow.hide).not.toHaveBeenCalled()
+  })
+
+  it('restores the main window after a capture failure and allows another startup', async () => {
     invoke.mockRejectedValueOnce(new Error('capture failed'))
     const opening = startScreenshotTranslation()
     const rejection = expect(opening).rejects.toThrow('capture failed')
@@ -116,9 +160,16 @@ describe('screenshot selection window order', () => {
 
     await rejection
     expect(appWindow.show).toHaveBeenCalledTimes(1)
+
+    const retry = startScreenshotTranslation()
+    await vi.advanceTimersByTimeAsync(120)
+    await retry
+
+    expect(invoke.mock.calls.filter(([command]) => command === 'capture_screen_region')).toHaveLength(2)
+    expect(createWebviewWindow).toHaveBeenCalledTimes(1)
   })
 
-  it('restores the main window when the selection window cannot be created', async () => {
+  it('restores the main window after a creation failure and allows another startup', async () => {
     selectionWindow.once.mockImplementation((event, handler) => {
       if (event === 'tauri://error') {
         queueMicrotask(() => handler({ payload: 'create failed' }))
@@ -135,6 +186,19 @@ describe('screenshot selection window order', () => {
     expect(invoke).toHaveBeenCalledWith('delete_screenshot_file', {
       imagePath: '/tmp/fanyifanyi-screen-order.png',
     })
+
+    selectionWindow.once.mockImplementation((event, handler) => {
+      if (event === 'tauri://created') {
+        queueMicrotask(() => handler({ payload: null }))
+      }
+      return Promise.resolve(vi.fn())
+    })
+    const retry = startScreenshotTranslation()
+    await vi.advanceTimersByTimeAsync(120)
+    await retry
+
+    expect(invoke.mock.calls.filter(([command]) => command === 'capture_screen_region')).toHaveLength(2)
+    expect(createWebviewWindow).toHaveBeenCalledTimes(2)
   })
 
   it('destroys screenshot windows before closing the app window', async () => {

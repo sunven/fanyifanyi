@@ -2,6 +2,8 @@ import type { AIConfig, AIConfigs, TranslationProvider } from '@/lib/config'
 import { ArrowLeft, Bot, Check, Eye, EyeOff, Info, Languages, Loader2, Pencil, Play, RefreshCw, Trash2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
+import HistorySettings from '@/components/HistorySettings'
+import ShortcutSettings from '@/components/ShortcutSettings'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -413,7 +415,15 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
 
       <div className="p-4 max-w-4xl mx-auto space-y-6">
         <NonMacOnly>
-          <h1 className="text-2xl font-semibold tracking-tight text-balance">设置</h1>
+          <div className="flex items-center gap-3">
+            {onBack && (
+              <Button variant="ghost" size="sm" onClick={onBack} aria-label="返回">
+                <ArrowLeft className="h-4 w-4" />
+                返回
+              </Button>
+            )}
+            <h1 className="text-2xl font-semibold tracking-tight text-balance">设置</h1>
+          </div>
         </NonMacOnly>
         <div className="p-2">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
@@ -502,6 +512,11 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
             API Key 以未加密形式保存在本机。
           </p>
         </div>
+        <Separator />
+
+        <HistorySettings />
+        <Separator />
+        <ShortcutSettings />
         <Separator />
 
         {/* About/Update Section */}

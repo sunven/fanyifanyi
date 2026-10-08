@@ -10,7 +10,9 @@ use tauri::Manager;
 use tauri_plugin_http::reqwest;
 use tauri_plugin_log::{Target, TargetKind};
 
+mod history;
 mod secret_store;
+mod shortcuts;
 
 use secret_store::FileSecretStore;
 
@@ -866,6 +868,10 @@ pub fn run() {
         .setup(|app| {
             let path = app.path().app_data_dir()?.join(SECRETS_FILE_NAME);
             app.manage(FileSecretStore::new(path));
+            app.manage(history::HistoryStore::new(
+                app.path().app_data_dir()?.join("history-v1.json"),
+            ));
+            shortcuts::initialize(app.handle());
             Ok(())
         })
         .plugin(
@@ -895,7 +901,15 @@ pub fn run() {
             test_ai_config,
             secure_storage_get,
             secure_storage_set,
-            secure_storage_remove
+            secure_storage_remove,
+            history::history_get,
+            history::history_record,
+            history::history_set_enabled,
+            history::history_set_favorite,
+            history::history_delete,
+            history::history_clear,
+            shortcuts::get_screenshot_shortcut,
+            shortcuts::configure_screenshot_shortcut
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
