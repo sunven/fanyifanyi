@@ -111,6 +111,27 @@ describe('clipboard translation popup', () => {
     await waitFor(() => expect(invoke.mock.calls.filter(([command]) => command === 'close_clipboard_translation')).toHaveLength(2))
   })
 
+  it('keeps translation cancelled when destruction fails after native session invalidation', async () => {
+    render(<ClipboardTranslation />)
+    await screen.findByText('正在翻译：Hello')
+    display.mockClear()
+    invoke.mockImplementation(async (command) => {
+      if (command === 'get_clipboard_translation_session')
+        return null
+      throw new Error('window busy')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '关闭快捷翻译' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('关闭快捷翻译失败')
+    expect(screen.queryByText('正在翻译：Hello')).not.toBeInTheDocument()
+    expect(display).not.toHaveBeenCalled()
+
+    invoke.mockResolvedValueOnce(undefined)
+    fireEvent.click(screen.getByRole('button', { name: '关闭快捷翻译' }))
+    await waitFor(() => expect(invoke.mock.calls.filter(([command]) => command === 'close_clipboard_translation')).toHaveLength(2))
+    expect(display).not.toHaveBeenCalled()
+  })
+
   it('ignores a stale initial read after a newer session arrives', async () => {
     let finish: (value: typeof current) => void = () => {}
     invoke.mockImplementationOnce(() => new Promise((resolve) => {
