@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.43] - 2026-10-09
+
+### Features
+
+- Add agent
+
 ## [0.1.40] - 2026-09-28
 
 ### Features
