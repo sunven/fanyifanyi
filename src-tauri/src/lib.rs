@@ -407,6 +407,17 @@ fn recognize_screenshot_text_impl(
         request.setRecognitionLanguages(&languages);
         request.setRecognitionLevel(VNRequestTextRecognitionLevel::Accurate);
         request.setUsesLanguageCorrection(true);
+        // Revision 3 can stall in E5RT on first use. Revision 2 supports our
+        // English OCR without changing Accurate recognition or language correction.
+        #[allow(deprecated)]
+        unsafe {
+            let revision = objc2_vision::VNRecognizeTextRequestRevision2;
+            let supported: objc2::rc::Retained<objc2_foundation::NSIndexSet> =
+                objc2::msg_send![VNRecognizeTextRequest::class(), supportedRevisions];
+            if supported.containsIndex(revision) {
+                request.setRevision(revision);
+            }
+        }
         unsafe {
             request.as_super().setRegionOfInterest(CGRect::new(
                 CGPoint::new(roi_x, roi_y),
@@ -1162,6 +1173,20 @@ mod tests {
                 "imagePath": "screenshot.png",
                 "workArea": { "x": -1440.0, "y": 25.0, "width": 1400.0, "height": 875.0 }
             })
+        );
+    }
+
+    #[test]
+    #[ignore = "wall-clock OCR regression; run alone in a fresh process on macOS"]
+    #[cfg(target_os = "macos")]
+    fn screenshot_ocr_finishes_without_compute_backend_stall() {
+        let started = Instant::now();
+        recognizes_wide_screenshot_text_with_vision();
+        let elapsed = started.elapsed();
+        eprintln!("Screenshot OCR completed in {elapsed:?}");
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "small screenshot OCR stalled for {elapsed:?}"
         );
     }
 
