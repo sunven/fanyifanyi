@@ -100,4 +100,40 @@ describe('desk translation recovery', () => {
     expect(screen.getByRole('status')).toHaveTextContent('未能保存到本地历史')
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
+
+  it('starts clipboard translation without the desk delay and guards its history write', async () => {
+    invoke.mockImplementation(command => Promise.resolve(command === 'is_clipboard_translation_current' ? true : command.startsWith('translate_with_') ? '你好' : undefined))
+    render(<TranslateDisplay q="hello" startDelay={0} clipboardSessionId={7} />)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(screen.getByText('你好')).toBeInTheDocument()
+    expect(invoke).toHaveBeenCalledWith('is_clipboard_translation_current', { id: 7 })
+    expect(invoke).toHaveBeenCalledWith('history_record', expect.objectContaining({ clipboardSessionId: 7 }))
+    expect(screen.getByRole('region', { name: '译文' })).toHaveFocus()
+  })
+
+  it('does not accept a result when the native clipboard session was replaced', async () => {
+    invoke.mockImplementation(command => Promise.resolve(command === 'is_clipboard_translation_current' ? false : '旧译文'))
+    render(<TranslateDisplay q="hello" startDelay={0} clipboardSessionId={7} />)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(screen.queryByText('旧译文')).not.toBeInTheDocument()
+    expect(invoke.mock.calls.filter(([command]) => command === 'history_record')).toHaveLength(0)
+  })
+
+  it('does not save a clipboard response after the display unmounts', async () => {
+    let finish: (value: string) => void = () => {}
+    invoke.mockImplementation(command => command.startsWith('translate_with_')
+      ? new Promise((resolve) => { finish = resolve })
+      : Promise.resolve(true))
+    const view = render(<TranslateDisplay q="hello" startDelay={0} clipboardSessionId={7} />)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    view.unmount()
+    await act(async () => finish('旧译文'))
+    expect(invoke.mock.calls.filter(([command]) => command === 'history_record')).toHaveLength(0)
+  })
 })

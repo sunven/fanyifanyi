@@ -2,6 +2,7 @@ import { invoke, isTauri } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 
 export const DEFAULT_SCREENSHOT_SHORTCUT = 'Ctrl+Alt+T'
+export const DEFAULT_CLIPBOARD_SHORTCUT = 'Ctrl+Alt+C'
 
 export interface ShortcutSettings {
   supported: boolean
@@ -53,4 +54,18 @@ export async function bindScreenshotShortcut(
       unlisten()
     }
   }
+}
+
+export async function loadClipboardShortcut(): Promise<ShortcutSettings> {
+  if (!isTauri()) {
+    return { supported: false, enabled: false, shortcut: DEFAULT_CLIPBOARD_SHORTCUT, error: null }
+  }
+  return invoke<ShortcutSettings>('get_clipboard_shortcut')
+}
+
+export async function saveClipboardShortcut(enabled: boolean, shortcut: string): Promise<ShortcutSettings> {
+  if (!isTauri()) {
+    throw new Error('复制后快捷翻译仅支持 macOS 桌面应用')
+  }
+  return invoke<ShortcutSettings>('configure_clipboard_shortcut', { enabled, shortcut })
 }

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { bindScreenshotShortcut, loadScreenshotShortcut, saveScreenshotShortcut } from '../shortcuts'
+import { bindScreenshotShortcut, loadClipboardShortcut, loadScreenshotShortcut, saveClipboardShortcut, saveScreenshotShortcut } from '../shortcuts'
 
 const { invoke, isTauri, listen } = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -16,6 +16,18 @@ describe('screenshot shortcut events', () => {
     isTauri.mockReturnValue(true)
     invoke.mockResolvedValue({ supported: true, enabled: true, shortcut: 'Ctrl+Alt+T', error: null })
     listen.mockResolvedValue(vi.fn())
+  })
+
+  it('uses distinct clipboard commands and reports browser support accurately', async () => {
+    await loadClipboardShortcut()
+    expect(invoke).toHaveBeenCalledWith('get_clipboard_shortcut')
+    await saveClipboardShortcut(false, 'Ctrl+Alt+C')
+    expect(invoke).toHaveBeenCalledWith('configure_clipboard_shortcut', { enabled: false, shortcut: 'Ctrl+Alt+C' })
+    isTauri.mockReturnValue(false)
+    invoke.mockClear()
+    await expect(loadClipboardShortcut()).resolves.toMatchObject({ supported: false, enabled: false, shortcut: 'Ctrl+Alt+C' })
+    await expect(saveClipboardShortcut(true, 'Ctrl+Alt+C')).rejects.toThrow('仅支持 macOS')
+    expect(invoke).not.toHaveBeenCalled()
   })
 
   it('triggers screenshots until the listener is disposed', async () => {

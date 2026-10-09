@@ -2,13 +2,15 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ShortcutSettings from '../ShortcutSettings'
 
-const { loadScreenshotShortcut, saveScreenshotShortcut, isTauri } = vi.hoisted(() => ({
+const { loadScreenshotShortcut, saveScreenshotShortcut, loadClipboardShortcut, saveClipboardShortcut, isTauri } = vi.hoisted(() => ({
   loadScreenshotShortcut: vi.fn(),
   saveScreenshotShortcut: vi.fn(),
+  loadClipboardShortcut: vi.fn(),
+  saveClipboardShortcut: vi.fn(),
   isTauri: vi.fn(),
 }))
 
-vi.mock('@/lib/shortcuts', () => ({ DEFAULT_SCREENSHOT_SHORTCUT: 'Ctrl+Alt+T', loadScreenshotShortcut, saveScreenshotShortcut }))
+vi.mock('@/lib/shortcuts', () => ({ DEFAULT_SCREENSHOT_SHORTCUT: 'Ctrl+Alt+T', DEFAULT_CLIPBOARD_SHORTCUT: 'Ctrl+Alt+C', loadScreenshotShortcut, saveScreenshotShortcut, loadClipboardShortcut, saveClipboardShortcut }))
 vi.mock('@tauri-apps/api/core', () => ({ isTauri }))
 
 const saved = { supported: true, enabled: true, shortcut: 'Ctrl+Alt+T' }
@@ -24,9 +26,37 @@ describe('screenshot shortcut settings', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     loadScreenshotShortcut.mockResolvedValue(saved)
+    loadClipboardShortcut.mockResolvedValue({ ...saved, shortcut: 'Ctrl+Alt+C' })
+    saveClipboardShortcut.mockImplementation(async (enabled, shortcut) => ({ supported: true, enabled, shortcut }))
     saveScreenshotShortcut.mockImplementation(async (enabled, shortcut) => ({ supported: true, enabled, shortcut }))
     isTauri.mockReturnValue(true)
     Object.defineProperty(navigator, 'platform', { configurable: true, value: 'Win32' })
+  })
+
+  it('configures clipboard independently when both controls are rendered', async () => {
+    render(
+      <>
+        <ShortcutSettings />
+        <ShortcutSettings kind="clipboard" />
+      </>,
+    )
+    const input = await screen.findByRole('textbox', { name: '复制后快捷翻译组合' })
+    expect(input).toHaveValue('Ctrl+Alt+C')
+    fireEvent.click(screen.getByRole('switch', { name: '启用复制后快捷翻译' }))
+    expect(await screen.findByRole('status')).toHaveTextContent('复制后快捷翻译已保存')
+    expect(saveClipboardShortcut).toHaveBeenCalledWith(false, 'Ctrl+Alt+C')
+    expect(saveScreenshotShortcut).not.toHaveBeenCalled()
+    expect(screen.getByRole('switch', { name: '启用全局截图快捷键' })).toBeChecked()
+  })
+
+  it('restores the clipboard default and preserves registration errors', async () => {
+    loadClipboardShortcut.mockResolvedValueOnce({ ...saved, shortcut: 'Ctrl+Shift+K' })
+    saveClipboardShortcut.mockRejectedValueOnce('该快捷键已用于另一个翻译操作')
+    render(<ShortcutSettings kind="clipboard" />)
+    fireEvent.click(await screen.findByRole('button', { name: '恢复默认' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('另一个翻译操作')
+    expect(saveClipboardShortcut).toHaveBeenCalledWith(true, 'Ctrl+Alt+C')
+    expect(screen.getByRole('textbox')).toHaveValue('Ctrl+Shift+K')
   })
 
   it('records a draft and saves it only when requested', async () => {

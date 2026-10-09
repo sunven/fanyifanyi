@@ -192,6 +192,16 @@ async function restoreAppWindow() {
 }
 
 async function captureAndOpenSelection() {
+  try {
+    await invoke('close_clipboard_translation', { restoreFocus: false, suspendForScreenshot: true })
+    await captureAndOpenSelectionWindow()
+  }
+  finally {
+    await invoke('resume_clipboard_translation')
+  }
+}
+
+async function captureAndOpenSelectionWindow() {
   const appWindow = getCurrentWindow()
   const position = await cursorPosition()
   const monitor = await monitorFromPoint(position.x, position.y)

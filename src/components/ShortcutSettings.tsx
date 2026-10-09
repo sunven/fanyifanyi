@@ -5,7 +5,7 @@ import { Keyboard } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { DEFAULT_SCREENSHOT_SHORTCUT as DEFAULT_SHORTCUT, loadScreenshotShortcut, saveScreenshotShortcut } from '@/lib/shortcuts'
+import { DEFAULT_CLIPBOARD_SHORTCUT, DEFAULT_SCREENSHOT_SHORTCUT, loadClipboardShortcut, loadScreenshotShortcut, saveClipboardShortcut, saveScreenshotShortcut } from '@/lib/shortcuts'
 
 function displayShortcut(shortcut: string) {
   if (navigator.platform.toLowerCase().includes('mac')) {
@@ -14,9 +14,16 @@ function displayShortcut(shortcut: string) {
   return shortcut
 }
 
-export default function ShortcutSettings() {
+export default function ShortcutSettings({ kind = 'screenshot' }: { kind?: 'screenshot' | 'clipboard' }) {
+  const clipboard = kind === 'clipboard'
+  const title = clipboard ? '复制后快捷翻译' : '截图快捷键'
+  const defaultShortcut = clipboard ? DEFAULT_CLIPBOARD_SHORTCUT : DEFAULT_SCREENSHOT_SHORTCUT
+  const loadShortcut = clipboard ? loadClipboardShortcut : loadScreenshotShortcut
+  const saveShortcut = clipboard ? saveClipboardShortcut : saveScreenshotShortcut
+  const inputId = `${kind}-shortcut`
+
   const [settings, setSettings] = useState<SavedShortcutSettings | null>(null)
-  const [draft, setDraft] = useState(DEFAULT_SHORTCUT)
+  const [draft, setDraft] = useState(defaultShortcut)
   const [recording, setRecording] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -24,7 +31,7 @@ export default function ShortcutSettings() {
 
   useEffect(() => {
     let cancelled = false
-    loadScreenshotShortcut().then((loaded) => {
+    loadShortcut().then((loaded) => {
       if (!cancelled) {
         setSettings(loaded)
         setDraft(loaded.shortcut)
@@ -32,13 +39,13 @@ export default function ShortcutSettings() {
       }
     }).catch(() => {
       if (!cancelled) {
-        setError('读取截图快捷键失败，请重试')
+        setError(`读取${title}失败，请重试`)
       }
     })
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [loadShortcut, title])
 
   const save = async (enabled: boolean, shortcut: string) => {
     setBusy(true)
@@ -46,17 +53,17 @@ export default function ShortcutSettings() {
     setMessage('')
     setRecording(false)
     try {
-      const saved = await saveScreenshotShortcut(enabled, shortcut)
+      const saved = await saveShortcut(enabled, shortcut)
       if (saved.error) {
         setError(saved.error)
         return
       }
       setSettings(saved)
       setDraft(saved.shortcut)
-      setMessage('截图快捷键已保存')
+      setMessage(`${title}已保存`)
     }
     catch (reason) {
-      setError(typeof reason === 'string' ? reason : reason instanceof Error ? reason.message : '保存截图快捷键失败，请重试')
+      setError(typeof reason === 'string' ? reason : reason instanceof Error ? reason.message : `保存${title}失败，请重试`)
     }
     finally {
       setBusy(false)
@@ -95,18 +102,18 @@ export default function ShortcutSettings() {
   const disabled = !settings?.supported || busy
 
   return (
-    <section className="space-y-4 p-2" aria-labelledby="shortcut-settings-title">
+    <section className="space-y-4 p-2" aria-labelledby={`${inputId}-title`}>
       <div className="flex items-center gap-2">
         <Keyboard className="h-5 w-5 text-primary" />
-        <h2 id="shortcut-settings-title" className="text-lg font-semibold tracking-tight">截图快捷键</h2>
+        <h2 id={`${inputId}-title`} className="text-lg font-semibold tracking-tight">{title}</h2>
       </div>
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-1">
-          <label htmlFor="screenshot-shortcut-enabled" className="text-sm font-medium">启用全局截图快捷键</label>
-          <p className="text-sm text-muted-foreground">应用在后台时，也可以用快捷键开始截图翻译。</p>
+          <label htmlFor={`${inputId}-enabled`} className="text-sm font-medium">{clipboard ? '启用复制后快捷翻译' : '启用全局截图快捷键'}</label>
+          <p className="text-sm text-muted-foreground">{clipboard ? '复制文字后按快捷键查看译文；仅在触发时读取剪贴板。' : '应用在后台时，也可以用快捷键开始截图翻译。'}</p>
         </div>
         <input
-          id="screenshot-shortcut-enabled"
+          id={`${inputId}-enabled`}
           type="checkbox"
           role="switch"
           checked={settings?.enabled ?? true}
@@ -124,7 +131,7 @@ export default function ShortcutSettings() {
                 {!settings.enabled && '（已停用）'}
               </p>
               <div className="flex flex-wrap items-center gap-2">
-                <Input id="screenshot-shortcut" aria-label="截图快捷键组合" readOnly value={recording ? '请按下组合键...' : displayShortcut(draft)} onKeyDown={recordShortcut} onBlur={() => setRecording(false)} disabled={disabled} className="w-full sm:w-56" />
+                <Input id={inputId} aria-label={`${title}组合`} readOnly value={recording ? '请按下组合键...' : displayShortcut(draft)} onKeyDown={recordShortcut} onBlur={() => setRecording(false)} disabled={disabled} className="w-full sm:w-56" />
                 <Button
                   variant="outline"
                   size="sm"
@@ -132,23 +139,23 @@ export default function ShortcutSettings() {
                   onClick={() => {
                     setRecording(true)
                     setError('')
-                    document.getElementById('screenshot-shortcut')?.focus()
+                    document.getElementById(inputId)?.focus()
                   }}
                 >
                   {recording ? '录制中...' : '录制快捷键'}
                 </Button>
                 <Button size="sm" disabled={disabled || recording || draft === settings.shortcut} onClick={() => void save(settings.enabled, draft)}>保存快捷键</Button>
-                <Button variant="ghost" size="sm" disabled={disabled || recording} onClick={() => void save(settings.enabled, DEFAULT_SHORTCUT)}>恢复默认</Button>
+                <Button variant="ghost" size="sm" disabled={disabled || recording} onClick={() => void save(settings.enabled, defaultShortcut)}>恢复默认</Button>
               </div>
               <p className="text-xs text-muted-foreground">
                 点击录制后按下组合键，按 Esc 取消；保存后生效。默认：
-                {displayShortcut(DEFAULT_SHORTCUT)}
+                {displayShortcut(defaultShortcut)}
                 。
               </p>
             </div>
           )
         : settings
-          ? <p className="text-sm text-muted-foreground">{isTauri() ? '当前平台暂不支持全局截图快捷键。' : '截图快捷键仅在桌面应用中可用。'}</p>
+          ? <p className="text-sm text-muted-foreground">{isTauri() ? `当前平台暂不支持${clipboard ? title : '全局截图快捷键'}。` : `${title}仅在桌面应用中可用。`}</p>
           : !error && <p className="text-xs text-muted-foreground">正在加载快捷键设置...</p>}
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       {message && <p role="status" className="text-xs text-muted-foreground">{message}</p>}

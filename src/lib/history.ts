@@ -21,11 +21,12 @@ export function loadHistory() {
   return invoke<HistorySnapshot>('history_get')
 }
 
-export async function recordTranslation(sourceText: string, kind: TranslationKind, result: TranslationResult) {
+export async function recordTranslation(sourceText: string, kind: TranslationKind, result: TranslationResult, clipboardSessionId?: number) {
   if (!sourceText.trim() || !result.text.trim()) {
     return
   }
   await invoke<void>('history_record', {
+    ...(clipboardSessionId === undefined ? {} : { clipboardSessionId }),
     entry: {
       id: crypto.randomUUID(),
       completedAt: Date.now(),

@@ -1,5 +1,6 @@
 import type { TranslationTarget } from '@/lib/config'
 import type { TranslationResult } from '@/lib/translate'
+import { invoke } from '@tauri-apps/api/core'
 import { StopCircle } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Streamdown } from 'streamdown'
@@ -10,6 +11,8 @@ import { translate, translationEngineLabel, TranslationError } from '@/lib/trans
 
 interface TranslateDisplayProps {
   q: string
+  startDelay?: number
+  clipboardSessionId?: number
 }
 
 function TranslationSkeleton() {
@@ -23,7 +26,7 @@ function TranslationSkeleton() {
   )
 }
 
-export default function TranslateDisplay({ q }: TranslateDisplayProps) {
+export default function TranslateDisplay({ q, startDelay = 1000, clipboardSessionId }: TranslateDisplayProps) {
   const [result, setResult] = useState<TranslationResult | null>(null)
   const [error, setError] = useState('')
   const [historyError, setHistoryError] = useState('')
@@ -31,6 +34,7 @@ export default function TranslateDisplay({ q }: TranslateDisplayProps) {
   const abortControllerRef = useRef<AbortController | null>(null)
   const requestRef = useRef(0)
   const retryTargetRef = useRef<TranslationTarget | undefined>()
+  const contentRef = useRef<HTMLDivElement>(null)
 
   const translateText = useCallback(async (target?: TranslationTarget) => {
     if (!q.trim())
@@ -47,11 +51,13 @@ export default function TranslateDisplay({ q }: TranslateDisplayProps) {
     setResult(null)
     try {
       const translated = await translate(q, 'desk', controller.signal, selected)
+      if (clipboardSessionId !== undefined && !await invoke<boolean>('is_clipboard_translation_current', { id: clipboardSessionId }))
+        return
       if (request !== requestRef.current || controller.signal.aborted || !translated)
         return
       setResult(translated)
       try {
-        await recordTranslation(q, 'desk', translated)
+        await recordTranslation(q, 'desk', translated, clipboardSessionId)
       }
       catch {
         if (request === requestRef.current && !controller.signal.aborted)
@@ -73,7 +79,7 @@ export default function TranslateDisplay({ q }: TranslateDisplayProps) {
       if (request === requestRef.current && !controller.signal.aborted)
         setIsLoading(false)
     }
-  }, [q])
+  }, [q, clipboardSessionId])
 
   useEffect(() => {
     retryTargetRef.current = undefined
@@ -81,14 +87,16 @@ export default function TranslateDisplay({ q }: TranslateDisplayProps) {
     setError('')
     setHistoryError('')
     setIsLoading(false)
+    if (clipboardSessionId !== undefined)
+      contentRef.current?.focus({ preventScroll: true })
     const timer = setTimeout(() => {
       void translateText()
-    }, 1000)
+    }, startDelay)
     return () => {
       clearTimeout(timer)
       abortControllerRef.current?.abort()
     }
-  }, [translateText])
+  }, [translateText, startDelay, clipboardSessionId])
 
   const handleStop = () => {
     ++requestRef.current
@@ -119,7 +127,13 @@ export default function TranslateDisplay({ q }: TranslateDisplayProps) {
         </div>
       </div>
       {historyError && <p role="status" className="text-xs text-amber-700">{historyError}</p>}
-      <div className="prose prose-neutral dark:prose-invert max-w-none flex-1 overflow-y-auto pr-2 break-words prose-p:leading-relaxed prose-headings:tracking-tight">
+      <div
+        ref={contentRef}
+        role={clipboardSessionId === undefined ? undefined : 'region'}
+        aria-label={clipboardSessionId === undefined ? undefined : '译文'}
+        tabIndex={clipboardSessionId === undefined ? undefined : 0}
+        className="prose prose-neutral dark:prose-invert max-w-none flex-1 overflow-y-auto pr-2 break-words prose-p:leading-relaxed prose-headings:tracking-tight"
+      >
         {!q && !translatedText && !error
           ? (
               <p className="text-sm leading-relaxed text-pretty text-muted-foreground">

@@ -119,14 +119,87 @@ describe('screenshot selection window order', () => {
     expect(appWindow.show).not.toHaveBeenCalled()
   })
 
-  it('captures only once when the shortcut is repeated during preparation', async () => {
-    let finishCapture: (() => void) | undefined
-    invoke.mockImplementationOnce(() => new Promise((resolve) => {
-      finishCapture = () => resolve({
+  it('waits for clipboard translation to close without restoring focus before hiding and capturing', async () => {
+    let finishClose: (() => void) | undefined
+    let finishCreation: (() => void) | undefined
+    selectionWindow.once.mockImplementation((event, handler) => {
+      if (event === 'tauri://created')
+        finishCreation = () => handler({ payload: null })
+      return Promise.resolve(vi.fn())
+    })
+    invoke.mockImplementation((command: string) => {
+      if (command === 'close_clipboard_translation') {
+        return new Promise<void>((resolve) => {
+          finishClose = resolve
+        })
+      }
+      return Promise.resolve({
         imagePath: '/tmp/fanyifanyi-screen-order.png',
         workArea: { x: 0, y: 24, width: 800, height: 450 },
       })
-    }))
+    })
+
+    const opening = startScreenshotTranslation()
+    await vi.advanceTimersByTimeAsync(120)
+
+    expect(invoke).toHaveBeenCalledExactlyOnceWith('close_clipboard_translation', { restoreFocus: false, suspendForScreenshot: true })
+    expect(appWindow.hide).not.toHaveBeenCalled()
+    expect(createWebviewWindow).not.toHaveBeenCalled()
+
+    finishClose?.()
+    await vi.advanceTimersByTimeAsync(120)
+    expect(createWebviewWindow).toHaveBeenCalledTimes(1)
+    expect(invoke).not.toHaveBeenCalledWith('resume_clipboard_translation')
+
+    finishCreation?.()
+    await opening
+
+    expect(appWindow.hide).toHaveBeenCalledTimes(1)
+    const captureIndex = invoke.mock.calls.findIndex(([command]) => command === 'capture_screen_region')
+    expect(captureIndex).toBeGreaterThan(0)
+    expect(appWindow.hide.mock.invocationCallOrder[0]).toBeLessThan(invoke.mock.invocationCallOrder[captureIndex])
+    expect(createWebviewWindow).toHaveBeenCalledTimes(1)
+    expect(invoke).toHaveBeenLastCalledWith('resume_clipboard_translation')
+  })
+
+  it('aborts before hiding or capturing when closing clipboard translation fails and allows retry', async () => {
+    let closeAttempts = 0
+    invoke.mockImplementation(async (command: string) => {
+      if (command === 'close_clipboard_translation' && closeAttempts++ === 0)
+        throw new Error('clipboard close failed')
+      return {
+        imagePath: '/tmp/fanyifanyi-screen-order.png',
+        workArea: { x: 0, y: 24, width: 800, height: 450 },
+      }
+    })
+
+    await expect(startScreenshotTranslation()).rejects.toThrow('clipboard close failed')
+
+    expect(invoke.mock.calls).toEqual([
+      ['close_clipboard_translation', { restoreFocus: false, suspendForScreenshot: true }],
+      ['resume_clipboard_translation'],
+    ])
+    expect(appWindow.hide).not.toHaveBeenCalled()
+    expect(appWindow.show).not.toHaveBeenCalled()
+    expect(createWebviewWindow).not.toHaveBeenCalled()
+
+    const retry = startScreenshotTranslation()
+    await vi.advanceTimersByTimeAsync(120)
+    await retry
+
+    expect(createWebviewWindow).toHaveBeenCalledTimes(1)
+  })
+
+  it('captures only once when the shortcut is repeated during preparation', async () => {
+    let finishCapture: (() => void) | undefined
+    invoke.mockImplementation((command: string) => command === 'capture_screen_region'
+      ? new Promise((resolve) => {
+        finishCapture = () => resolve({
+          imagePath: '/tmp/fanyifanyi-screen-order.png',
+          workArea: { x: 0, y: 24, width: 800, height: 450 },
+        })
+      })
+      : Promise.resolve(true))
 
     const opening = startScreenshotTranslation()
     await startScreenshotTranslation()
@@ -162,7 +235,17 @@ describe('screenshot selection window order', () => {
   })
 
   it('restores the main window after a capture failure and allows another startup', async () => {
-    invoke.mockRejectedValueOnce(new Error('capture failed'))
+    let captureAttempts = 0
+    invoke.mockImplementation(async (command: string) => {
+      if (command !== 'capture_screen_region')
+        return true
+      if (captureAttempts++ === 0)
+        throw new Error('capture failed')
+      return {
+        imagePath: '/tmp/fanyifanyi-screen-order.png',
+        workArea: { x: 0, y: 24, width: 800, height: 450 },
+      }
+    })
     const opening = startScreenshotTranslation()
     const rejection = expect(opening).rejects.toThrow('capture failed')
 
@@ -170,6 +253,7 @@ describe('screenshot selection window order', () => {
 
     await rejection
     expect(appWindow.show).toHaveBeenCalledTimes(1)
+    expect(invoke).toHaveBeenLastCalledWith('resume_clipboard_translation')
 
     const retry = startScreenshotTranslation()
     await vi.advanceTimersByTimeAsync(120)
@@ -196,6 +280,7 @@ describe('screenshot selection window order', () => {
     expect(invoke).toHaveBeenCalledWith('delete_screenshot_file', {
       imagePath: '/tmp/fanyifanyi-screen-order.png',
     })
+    expect(invoke).toHaveBeenLastCalledWith('resume_clipboard_translation')
 
     selectionWindow.once.mockImplementation((event, handler) => {
       if (event === 'tauri://created') {

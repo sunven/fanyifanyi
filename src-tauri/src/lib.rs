@@ -9,6 +9,7 @@ use tauri::Manager;
 use tauri_plugin_http::reqwest;
 use tauri_plugin_log::{Target, TargetKind};
 
+mod clipboard_translation;
 mod history;
 mod screenshot_store;
 mod secret_store;
@@ -914,6 +915,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(ScreenshotStore::default())
         .on_window_event(|window, event| {
+            clipboard_translation::on_window_event(window, event);
             if matches!(event, tauri::WindowEvent::Destroyed) {
                 if let Err(error) = window
                     .state::<ScreenshotStore>()
@@ -929,6 +931,7 @@ pub fn run() {
             app.manage(history::HistoryStore::new(
                 app.path().app_data_dir()?.join("history-v1.json"),
             ));
+            clipboard_translation::initialize(app.handle());
             shortcuts::initialize(app.handle());
             Ok(())
         })
@@ -968,7 +971,13 @@ pub fn run() {
             history::history_delete,
             history::history_clear,
             shortcuts::get_screenshot_shortcut,
-            shortcuts::configure_screenshot_shortcut
+            shortcuts::configure_screenshot_shortcut,
+            shortcuts::get_clipboard_shortcut,
+            shortcuts::configure_clipboard_shortcut,
+            clipboard_translation::get_clipboard_translation_session,
+            clipboard_translation::is_clipboard_translation_current,
+            clipboard_translation::close_clipboard_translation,
+            clipboard_translation::resume_clipboard_translation
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

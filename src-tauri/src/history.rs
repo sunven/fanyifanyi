@@ -240,9 +240,17 @@ pub(crate) fn history_get(
 
 #[tauri::command]
 pub(crate) fn history_record(
+    app: tauri::AppHandle,
     store: tauri::State<'_, HistoryStore>,
     entry: HistoryEntry,
+    clipboard_session_id: Option<u64>,
 ) -> Result<(), String> {
+    if let Some(id) = clipboard_session_id {
+        return crate::clipboard_translation::with_current_session(&app, id, || {
+            store.record(entry, now_millis()?)
+        })
+        .map(|_| ());
+    }
     store.record(entry, now_millis()?)
 }
 
