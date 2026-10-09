@@ -10,6 +10,7 @@ pub(crate) struct ClipboardSession {
     id: u64,
     source_text: String,
     error: Option<String>,
+    permission_required: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -32,6 +33,7 @@ impl Sessions {
         &mut self,
         source_text: String,
         error: Option<String>,
+        permission_required: bool,
         origin: Option<Origin>,
     ) -> u64 {
         if let Some(origin) = origin {
@@ -48,6 +50,7 @@ impl Sessions {
             id,
             source_text,
             error,
+            permission_required,
         });
         id
     }
@@ -63,11 +66,19 @@ pub(crate) fn initialize(app: &tauri::AppHandle) {
 }
 
 pub(crate) fn start(app: &tauri::AppHandle) {
+    dispatch(app, false);
+}
+
+pub(crate) fn start_selection(app: &tauri::AppHandle) {
+    dispatch(app, true);
+}
+
+fn dispatch(app: &tauri::AppHandle, selection: bool) {
     #[cfg(target_os = "macos")]
     {
         let handle = app.clone();
         if let Err(error) = app.run_on_main_thread(move || {
-            if let Err(error) = platform::start(&handle) {
+            if let Err(error) = platform::start(&handle, selection) {
                 log::warn!("打开快捷翻译失败：{error}");
             }
         }) {
@@ -75,7 +86,7 @@ pub(crate) fn start(app: &tauri::AppHandle) {
         }
     }
     #[cfg(not(target_os = "macos"))]
-    let _ = app;
+    let _ = (app, selection);
 }
 
 #[tauri::command]
@@ -343,7 +354,7 @@ mod platform {
         ))
     }
 
-    pub(super) fn start(app: &tauri::AppHandle) -> Result<(), String> {
+    pub(super) fn start(app: &tauri::AppHandle, selection: bool) -> Result<(), String> {
         if app
             .state::<Mutex<Sessions>>()
             .lock()
@@ -360,16 +371,45 @@ mod platform {
             selection.set_focus().map_err(|error| error.to_string())?;
             return Ok(());
         }
+        // Do not read the popup's own selection or replace its existing result.
+        if selection
+            && app
+                .get_webview_window(WINDOW_LABEL)
+                .is_some_and(|window| window.is_focused().unwrap_or(false))
+        {
+            return Ok(());
+        }
         let origin = origin(app);
-        let (text, error) = match clipboard() {
-            Ok(text) => (text, None),
-            Err(error) => (String::new(), Some(error)),
+        // Capture before showing/focusing the popup, while the source owns its selection.
+        let (text, error, permission_required) = if selection {
+            match origin.as_ref() {
+                Some(origin) => {
+                    match crate::selection_translation::read_selected_text(origin.pid) {
+                        Ok(text) => (text, None, false),
+                        Err(error) => (
+                            String::new(),
+                            Some(error.to_string()),
+                            error.code() == "permission_required",
+                        ),
+                    }
+                }
+                None => (
+                    String::new(),
+                    Some("未能读取来源应用，请返回网页选中文字后重试".to_string()),
+                    false,
+                ),
+            }
+        } else {
+            match clipboard() {
+                Ok(text) => (text, None, false),
+                Err(error) => (String::new(), Some(error), false),
+            }
         };
         let (id, changed) = {
             let state = app.state::<Mutex<Sessions>>();
             let mut sessions = state.lock().map_err(|_| "快捷翻译状态不可用".to_string())?;
             let previous = sessions.current.as_ref().map(|session| session.id);
-            let id = sessions.update(text, error, origin);
+            let id = sessions.update(text, error, permission_required, origin);
             (id, previous != Some(id))
         };
         let window = if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
@@ -438,7 +478,7 @@ mod tests {
     #[test]
     fn closing_popup_does_not_resume_clipboard_reads_during_screenshot_preparation() {
         let mut sessions = Sessions::default();
-        sessions.update("text".into(), None, None);
+        sessions.update("text".into(), None, false, None);
         sessions.screenshot_preparing = true;
         sessions.clear();
         assert!(sessions.screenshot_preparing);
@@ -448,7 +488,10 @@ mod tests {
     #[test]
     fn history_guard_rejects_closed_and_replaced_sessions_and_holds_lock_during_write() {
         let state = Mutex::new(Sessions::default());
-        let first = state.lock().unwrap().update("first".into(), None, None);
+        let first = state
+            .lock()
+            .unwrap()
+            .update("first".into(), None, false, None);
         let result = with_session_state(&state, first, || {
             assert!(
                 state.try_lock().is_err(),
@@ -458,7 +501,10 @@ mod tests {
         })
         .unwrap();
         assert_eq!(result, Some("saved"));
-        state.lock().unwrap().update("second".into(), None, None);
+        state
+            .lock()
+            .unwrap()
+            .update("second".into(), None, false, None);
         assert_eq!(
             with_session_state(&state, first, || -> Result<(), String> {
                 panic!("replaced session must not persist")
@@ -479,7 +525,10 @@ mod tests {
     #[test]
     fn history_guard_propagates_storage_failure() {
         let state = Mutex::new(Sessions::default());
-        let id = state.lock().unwrap().update("first".into(), None, None);
+        let id = state
+            .lock()
+            .unwrap()
+            .update("first".into(), None, false, None);
         assert_eq!(
             with_session_state(&state, id, || -> Result<(), String> {
                 Err("disk full".into())
@@ -498,23 +547,56 @@ mod tests {
     #[test]
     fn repeated_text_keeps_session_and_new_text_invalidates_it() {
         let mut sessions = Sessions::default();
-        let first = sessions.update("first".into(), None, Some(origin(1)));
-        assert_eq!(sessions.update("first".into(), None, None), first);
+        let first = sessions.update("first".into(), None, false, Some(origin(1)));
+        assert_eq!(sessions.update("first".into(), None, false, None), first);
         assert_eq!(sessions.origin, Some(origin(1)));
-        assert!(sessions.update("second".into(), None, Some(origin(2))) > first);
+        assert!(sessions.update("second".into(), None, false, Some(origin(2))) > first);
         assert_eq!(sessions.clear(), Some(origin(2)));
         assert!(sessions.current.is_none());
-        assert!(sessions.update("first".into(), None, None) > first);
+        assert!(sessions.update("first".into(), None, false, None) > first);
     }
 
     #[test]
     fn errors_can_be_retried_and_cleared() {
         let mut sessions = Sessions::default();
-        let error = sessions.update(String::new(), Some("empty".into()), Some(origin(1)));
-        let retry = sessions.update(String::new(), Some("empty".into()), None);
+        let error = sessions.update(String::new(), Some("empty".into()), false, Some(origin(1)));
+        let retry = sessions.update(String::new(), Some("empty".into()), false, None);
         assert!(retry > error);
-        sessions.update("text".into(), None, None);
+        sessions.update("text".into(), None, false, None);
         assert!(sessions.current.unwrap().error.is_none());
+    }
+
+    #[test]
+    fn permission_failure_invalidates_old_translation_and_success_clears_guidance() {
+        let mut sessions = Sessions::default();
+        let first = sessions.update("old text".into(), None, false, Some(origin(1)));
+        let failure = sessions.update(
+            String::new(),
+            Some("permission required".into()),
+            true,
+            Some(origin(2)),
+        );
+        assert!(failure > first);
+        let current = sessions.current.as_ref().unwrap();
+        assert!(current.source_text.is_empty());
+        assert!(current.permission_required);
+        assert_eq!(sessions.origin, Some(origin(2)));
+        let success = sessions.update("selected text".into(), None, false, Some(origin(2)));
+        assert!(success > failure);
+        let current = sessions.current.as_ref().unwrap();
+        assert!(!current.permission_required);
+        assert!(current.error.is_none());
+    }
+
+    #[test]
+    fn same_text_from_another_application_updates_return_destination() {
+        let mut sessions = Sessions::default();
+        let first = sessions.update("same text".into(), None, false, Some(origin(1)));
+        assert_eq!(
+            sessions.update("same text".into(), None, false, Some(origin(2))),
+            first
+        );
+        assert_eq!(sessions.clear(), Some(origin(2)));
     }
 
     #[test]

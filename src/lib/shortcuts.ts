@@ -3,6 +3,7 @@ import { listen } from '@tauri-apps/api/event'
 
 export const DEFAULT_SCREENSHOT_SHORTCUT = 'Ctrl+Alt+T'
 export const DEFAULT_CLIPBOARD_SHORTCUT = 'Ctrl+Alt+C'
+export const DEFAULT_SELECTION_SHORTCUT = 'Ctrl+Alt+D'
 
 export interface ShortcutSettings {
   supported: boolean
@@ -68,4 +69,18 @@ export async function saveClipboardShortcut(enabled: boolean, shortcut: string):
     throw new Error('复制后快捷翻译仅支持 macOS 桌面应用')
   }
   return invoke<ShortcutSettings>('configure_clipboard_shortcut', { enabled, shortcut })
+}
+
+export async function loadSelectionShortcut(): Promise<ShortcutSettings> {
+  if (!isTauri()) {
+    return { supported: false, enabled: false, shortcut: DEFAULT_SELECTION_SHORTCUT, error: null }
+  }
+  return invoke<ShortcutSettings>('get_selection_shortcut')
+}
+
+export async function saveSelectionShortcut(enabled: boolean, shortcut: string): Promise<ShortcutSettings> {
+  if (!isTauri()) {
+    throw new Error('划词翻译仅支持 macOS 桌面应用')
+  }
+  return invoke<ShortcutSettings>('configure_selection_shortcut', { enabled, shortcut })
 }

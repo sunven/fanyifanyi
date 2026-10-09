@@ -13,6 +13,7 @@ mod clipboard_translation;
 mod history;
 mod screenshot_store;
 mod secret_store;
+mod selection_translation;
 mod shortcuts;
 
 use screenshot_store::{is_screenshot_temp_path, ScreenshotStore};
@@ -974,6 +975,9 @@ pub fn run() {
             shortcuts::configure_screenshot_shortcut,
             shortcuts::get_clipboard_shortcut,
             shortcuts::configure_clipboard_shortcut,
+            shortcuts::get_selection_shortcut,
+            shortcuts::configure_selection_shortcut,
+            selection_translation::open_selection_accessibility_settings,
             clipboard_translation::get_clipboard_translation_session,
             clipboard_translation::is_clipboard_translation_current,
             clipboard_translation::close_clipboard_translation,

@@ -1,0 +1,33 @@
+# macOS selected-text retrieval technical notes
+
+Date: 2026-10-09
+
+## Decision and evidence
+
+Read the captured source application's focused accessibility element before showing the translation popup. Request `AXSelectedText` first; if that attribute is unavailable, obtain `AXSelectedTextMarkerRange` and pass the opaque range to `AXStringForTextMarkerRange` on the same object. This does not read/write the clipboard, simulate copying, traverse unrelated windows, or modify the selection.
+
+Primary sources inspected:
+
+- Apple macOS SDK `ApplicationServices.framework/Frameworks/HIServices.framework/Headers/AXUIElement.h`, installed under `/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks/`: `AXIsProcessTrustedWithOptions(NULL)` checks trust without prompting; prompting with the options dictionary is asynchronous and does not change the return value. `AXUIElementCreateApplication` identifies an application by PID. Copy functions return retained references. `AXUIElementSetMessagingTimeout` applies only to the exact element, so both application and focused element receive a 250 ms timeout.
+- The same SDK's `AXAttributeConstants.h`: `AXFocusedUIElement` identifies focus; `AXSelectedText` is a CFString and is required only for editable text elements. Apple does not promise ordinary webpage selections through that attribute.
+- The same SDK's `AXError.h`: API disabled (`-25211`), no value (`-25212`), and unsupported attribute (`-25205`) are distinct failures.
+- [Apple AXUIElementCopyAttributeValue](https://developer.apple.com/documentation/applicationservices/1462085-axuielementcopyattributevalue).
+- [Apple AXIsProcessTrustedWithOptions](https://developer.apple.com/documentation/applicationservices/1459186-axisprocesstrustedwithoptions).
+- [WebKit macOS accessibility implementation](https://github.com/WebKit/WebKit/blob/main/Source/WebCore/accessibility/mac/WebAccessibilityObjectWrapperMac.mm): selected-text handler is restricted to text controls; general attributes include `NSAccessibilitySelectedTextMarkerRangeAttribute`, and parameterized attributes include `NSAccessibilityStringForTextMarkerRangeAttribute`. This motivates the narrowly scoped marker fallback for Safari static pages.
+- [Chromium macOS accessibility implementation](https://github.com/chromium/chromium/blob/main/ui/accessibility/platform/browser_accessibility_cocoa.mm): `accessibilitySelectedText` checks for visible selection and returns `GetSelectedRange(...).GetText()`; `selectedTextMarkerRange` and the string-for-marker handler also implement the marker path. This establishes API feasibility, not universal browser/page coverage.
+
+## Permission UX and limits
+
+Actual translation triggers check permission; startup does not request it. A separate user-clicked settings action opens `x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility`. This deep link is a practical macOS convention, not a stable API guaranteed by the inspected Apple SDK. The permission message instructs adding `fanyifanyi` with the + button if absent. If opening fails, show manual instructions for System Settings → Privacy & Security → Accessibility. Opening a URL successfully does not prove the OS navigated to the intended pane.
+
+No `AXManualAccessibility`/`AXEnhancedUserInterface` mutation is added without browser-version evidence. Browser AX trees can initialize lazily; a failed initial selection read gives the explicit copy-translation alternative. Marker attributes are browser implementation extensions and may change. A focused object can be unrelated to webpage selection; this implementation fails visibly rather than traversing other windows or returning arbitrary text.
+
+Each IPC request is bounded to 250 ms; a marker fallback requires up to five attribute requests in total including application role (approximately 1.25 seconds if each times out). The implementation reads the application role before requesting focus, preserving the runtime-tested activation sequence. Keep reads before focus transfer; do not make an unbounded AX request on the UI thread.
+
+## Verification status
+
+Pure Rust tests cover whitespace-only rejection, preservation of Unicode/internal newlines, and permission/no-selection/unsupported error separation. Compilation and integration checks are reported by the parent implementation task.
+
+Interactive acceptance remains necessary in actual Chrome and Safari: grant/revoke permission, select a static webpage sentence, trigger translation, verify original clipboard content, test no selection, repeat/new selection, and restore source focus with Esc. Runtime Chrome verification succeeded using a fresh isolated headed Chrome profile (user-agent Chrome/155.0.0.0) and a local data-URL static paragraph. Clicking the paragraph, then selecting its complete text via DOM Range produced `AXWebArea` focus and the expected `AXSelectedText`. The actual Rust `read_selected_text(43690)` passed a temporary integration assertion against `Selection translation keeps the clipboard unchanged.` (1 test passed, 0.16s); the temporary PID-specific test was removed and the browser session closed. An earlier DOM-only selection without clicking did not establish AX focus and correctly produced no value. During diagnosis the app's AXRole was read; Chromium's [application source](https://github.com/chromium/chromium/blob/main/chrome/browser/chrome_browser_application_mac.mm) says that reading role enables native AX. No attribute writes or manual AX enablement were needed. This focused single-page result does not prove all browser startup states.
+
+The Swift probe and Rust test executable were already trusted; packaged Tauri app permissions remain separate. No permission was granted/revoked. No clipboard was read or written by the reader/probe. Safari 27.0.1 was subsequently checked with an owned local static HTML fixture (Safari was not running before the probe). The fixture button created a DOM Range over a non-editable paragraph. With focus left on the button, the reader correctly returned NoSelection; adding `tabindex=-1` to the paragraph and focusing it after creating the range made the actual Rust reader return the exact expected paragraph (temporary integration test passed, 0.16s). The temporary test was removed and only the title-verified fixture tab was closed. This proves the focused static-element path on this Safari version; it is not a physical drag-selection or arbitrary website coverage test. Packaged-app permission onboarding and full translation/focus flow remain unverified.

@@ -24,12 +24,12 @@ vi.mock('@/components/translate-display', () => ({
 }))
 
 let change: (event: { payload: number }) => void
-let current = { id: 1, sourceText: 'Hello', error: null as string | null }
+let current = { id: 1, sourceText: 'Hello', error: null as string | null, permissionRequired: false }
 
 describe('clipboard translation popup', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    current = { id: 1, sourceText: 'Hello', error: null }
+    current = { id: 1, sourceText: 'Hello', error: null, permissionRequired: false }
     listen.mockImplementation(async (_event, handler) => {
       change = handler
       return unlisten
@@ -52,14 +52,14 @@ describe('clipboard translation popup', () => {
     await act(async () => change({ payload: 1 }))
     expect(invoke).toHaveBeenCalledTimes(reads)
 
-    current = { id: 2, sourceText: 'Goodbye', error: null }
+    current = { id: 2, sourceText: 'Goodbye', error: null, permissionRequired: false }
     await act(async () => change({ payload: 2 }))
     expect(screen.getByText('正在翻译：Goodbye')).toBeInTheDocument()
     expect(screen.queryByText('正在翻译：Hello')).not.toBeInTheDocument()
   })
 
   it('displays clipboard errors without mounting a translation request', async () => {
-    current = { id: 1, sourceText: '', error: '剪贴板没有可翻译的文字，请复制文字后再试' }
+    current = { id: 1, sourceText: '', error: '剪贴板没有可翻译的文字，请复制文字后再试', permissionRequired: false }
     render(<ClipboardTranslation />)
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('剪贴板没有可翻译的文字'))
     expect(display).not.toHaveBeenCalled()
@@ -71,6 +71,34 @@ describe('clipboard translation popup', () => {
     fireEvent.keyDown(window, { key: 'Escape' })
     expect(screen.queryByText('正在翻译：Hello')).not.toBeInTheDocument()
     expect(invoke).toHaveBeenCalledWith('close_clipboard_translation', { restoreFocus: true, id: 1 })
+  })
+
+  it('guides accessibility authorization without starting a translation', async () => {
+    current = { id: 1, sourceText: '', error: '请授权辅助功能后返回网页重新选中文字', permissionRequired: true }
+    render(<ClipboardTranslation />)
+    fireEvent.click(await screen.findByRole('button', { name: '打开辅助功能设置' }))
+    expect(invoke).toHaveBeenCalledWith('open_selection_accessibility_settings')
+    expect(display).not.toHaveBeenCalled()
+  })
+
+  it('provides manual authorization directions if opening system settings fails', async () => {
+    current = { id: 1, sourceText: '', error: '需要辅助功能权限', permissionRequired: true }
+    render(<ClipboardTranslation />)
+    await screen.findByRole('button', { name: '打开辅助功能设置' })
+    invoke.mockRejectedValueOnce(new Error('launch failed'))
+    fireEvent.click(screen.getByRole('button', { name: '打开辅助功能设置' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('隐私与安全性 → 辅助功能')
+    expect(display).not.toHaveBeenCalled()
+  })
+
+  it('clears a selection permission error when a successful session replaces it', async () => {
+    current = { id: 1, sourceText: '', error: '需要辅助功能权限', permissionRequired: true }
+    render(<ClipboardTranslation />)
+    await screen.findByRole('button', { name: '打开辅助功能设置' })
+    current = { id: 2, sourceText: 'Selected sentence', error: null, permissionRequired: false }
+    await act(async () => change({ payload: 2 }))
+    expect(screen.queryByRole('button', { name: '打开辅助功能设置' })).not.toBeInTheDocument()
+    expect(screen.getByText('正在翻译：Selected sentence')).toBeInTheDocument()
   })
 
   it('can close using the button and retries closing after a native failure', async () => {
@@ -90,9 +118,9 @@ describe('clipboard translation popup', () => {
     }))
     render(<ClipboardTranslation />)
     await waitFor(() => expect(invoke).toHaveBeenCalledOnce())
-    current = { id: 2, sourceText: 'Newest', error: null }
+    current = { id: 2, sourceText: 'Newest', error: null, permissionRequired: false }
     await act(async () => change({ payload: 2 }))
-    await act(async () => finish({ id: 1, sourceText: 'Old', error: null }))
+    await act(async () => finish({ id: 1, sourceText: 'Old', error: null, permissionRequired: false }))
     expect(screen.getByText('正在翻译：Newest')).toBeInTheDocument()
     expect(screen.queryByText('正在翻译：Old')).not.toBeInTheDocument()
   })

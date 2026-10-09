@@ -518,6 +518,7 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
         <Separator />
         <ShortcutSettings />
         <ShortcutSettings kind="clipboard" />
+        <ShortcutSettings kind="selection" />
         <Separator />
 
         {/* About/Update Section */}

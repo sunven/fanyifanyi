@@ -2,6 +2,7 @@ use serde::Serialize;
 
 const DEFAULT_SHORTCUT: &str = "Ctrl+Alt+T";
 const DEFAULT_CLIPBOARD_SHORTCUT: &str = "Ctrl+Alt+C";
+const DEFAULT_SELECTION_SHORTCUT: &str = "Ctrl+Alt+D";
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub(crate) struct ShortcutSettings {
@@ -34,7 +35,7 @@ pub(crate) async fn get_screenshot_shortcut(
     app: tauri::AppHandle,
 ) -> Result<ShortcutSettings, String> {
     #[cfg(target_os = "macos")]
-    return platform::settings(&app, false);
+    return platform::settings(&app, platform::Action::Screenshot);
     #[cfg(not(target_os = "macos"))]
     {
         let _ = app;
@@ -49,7 +50,7 @@ pub(crate) async fn configure_screenshot_shortcut(
     shortcut: String,
 ) -> Result<ShortcutSettings, String> {
     #[cfg(target_os = "macos")]
-    return platform::configure(&app, false, enabled, shortcut);
+    return platform::configure(&app, platform::Action::Screenshot, enabled, shortcut);
     #[cfg(not(target_os = "macos"))]
     {
         let _ = (app, enabled, shortcut);
@@ -62,7 +63,7 @@ pub(crate) async fn get_clipboard_shortcut(
     app: tauri::AppHandle,
 ) -> Result<ShortcutSettings, String> {
     #[cfg(target_os = "macos")]
-    return platform::settings(&app, true);
+    return platform::settings(&app, platform::Action::Clipboard);
     #[cfg(not(target_os = "macos"))]
     {
         let _ = app;
@@ -80,11 +81,42 @@ pub(crate) async fn configure_clipboard_shortcut(
     shortcut: String,
 ) -> Result<ShortcutSettings, String> {
     #[cfg(target_os = "macos")]
-    return platform::configure(&app, true, enabled, shortcut);
+    return platform::configure(&app, platform::Action::Clipboard, enabled, shortcut);
     #[cfg(not(target_os = "macos"))]
     {
         let _ = (app, enabled, shortcut);
         Err("复制后快捷翻译仅支持 macOS".to_string())
+    }
+}
+
+#[tauri::command]
+pub(crate) async fn get_selection_shortcut(
+    app: tauri::AppHandle,
+) -> Result<ShortcutSettings, String> {
+    #[cfg(target_os = "macos")]
+    return platform::settings(&app, platform::Action::Selection);
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        Ok(ShortcutSettings {
+            shortcut: DEFAULT_SELECTION_SHORTCUT.to_string(),
+            ..ShortcutSettings::default()
+        })
+    }
+}
+
+#[tauri::command]
+pub(crate) async fn configure_selection_shortcut(
+    app: tauri::AppHandle,
+    enabled: bool,
+    shortcut: String,
+) -> Result<ShortcutSettings, String> {
+    #[cfg(target_os = "macos")]
+    return platform::configure(&app, platform::Action::Selection, enabled, shortcut);
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, enabled, shortcut);
+        Err("划词翻译仅支持 macOS".to_string())
     }
 }
 
@@ -120,51 +152,76 @@ mod platform {
         }
     }
 
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    pub(super) enum Action {
+        Screenshot,
+        Clipboard,
+        Selection,
+    }
+
     struct ShortcutControllers {
         screenshot: ShortcutController,
         clipboard: ShortcutController,
+        selection: ShortcutController,
     }
 
     impl ShortcutControllers {
-        fn start(&mut self, registrar: &mut impl ShortcutRegistrar) {
-            self.screenshot.start(registrar);
-            if self.clipboard.settings.enabled
-                && self.screenshot.active.is_some()
-                && parse_shortcut(&self.clipboard.settings.shortcut).ok() == self.screenshot.active
-            {
-                self.clipboard.settings.error =
-                    Some("该快捷键已用于另一个翻译操作，请选择其他组合".to_string());
-            } else {
-                self.clipboard.start(registrar);
+        fn controller(&self, action: Action) -> &ShortcutController {
+            match action {
+                Action::Screenshot => &self.screenshot,
+                Action::Clipboard => &self.clipboard,
+                Action::Selection => &self.selection,
             }
         }
 
-        fn action(&self, shortcut: Shortcut) -> Option<bool> {
-            if self.screenshot.active == Some(shortcut) {
-                Some(false)
-            } else if self.clipboard.active == Some(shortcut) {
-                Some(true)
-            } else {
-                None
+        fn controller_mut(&mut self, action: Action) -> &mut ShortcutController {
+            match action {
+                Action::Screenshot => &mut self.screenshot,
+                Action::Clipboard => &mut self.clipboard,
+                Action::Selection => &mut self.selection,
             }
+        }
+
+        fn start(&mut self, registrar: &mut impl ShortcutRegistrar) {
+            for action in [Action::Screenshot, Action::Clipboard, Action::Selection] {
+                let selected = self.controller(action);
+                let conflict = selected.settings.enabled
+                    && parse_shortcut(&selected.settings.shortcut)
+                        .ok()
+                        .and_then(|shortcut| self.action(shortcut))
+                        .is_some();
+                let selected = self.controller_mut(action);
+                if conflict {
+                    selected.settings.error =
+                        Some("该快捷键已用于另一个翻译操作，请选择其他组合".to_string());
+                } else {
+                    selected.start(registrar);
+                }
+            }
+        }
+
+        fn action(&self, shortcut: Shortcut) -> Option<Action> {
+            [Action::Screenshot, Action::Clipboard, Action::Selection]
+                .into_iter()
+                .find(|action| self.controller(*action).active == Some(shortcut))
         }
 
         fn configure(
             &mut self,
             registrar: &mut impl ShortcutRegistrar,
-            clipboard: bool,
+            action: Action,
             enabled: bool,
             shortcut: String,
         ) -> Result<ShortcutSettings, String> {
-            let (selected, other) = if clipboard {
-                (&mut self.clipboard, &self.screenshot)
-            } else {
-                (&mut self.screenshot, &self.clipboard)
-            };
-            if enabled && other.active == Some(parse_shortcut(shortcut.trim())?) {
-                return Err("该快捷键已用于另一个翻译操作，请选择其他组合".to_string());
+            if enabled {
+                if let Some(other) = self.action(parse_shortcut(shortcut.trim())?) {
+                    if other != action {
+                        return Err("该快捷键已用于另一个翻译操作，请选择其他组合".to_string());
+                    }
+                }
             }
-            selected.configure(registrar, enabled, shortcut)
+            self.controller_mut(action)
+                .configure(registrar, enabled, shortcut)
         }
     }
 
@@ -180,6 +237,10 @@ mod platform {
             clipboard: ShortcutController::load_for(
                 path("clipboard-shortcut-v1.json"),
                 DEFAULT_CLIPBOARD_SHORTCUT,
+            ),
+            selection: ShortcutController::load_for(
+                path("selection-shortcut-v1.json"),
+                DEFAULT_SELECTION_SHORTCUT,
             ),
         };
         let plugin = tauri_plugin_global_shortcut::Builder::new()
@@ -197,13 +258,17 @@ mod platform {
                             .and_then(|controllers| controllers.action(*shortcut))
                     });
                 // Dispatch after releasing our guard, on a separate task from the plugin callback.
-                if let Some(clipboard) = action {
+                if let Some(action) = action {
                     let app = app.clone();
                     tauri::async_runtime::spawn(async move {
-                        if clipboard {
-                            crate::clipboard_translation::start(&app);
-                        } else {
-                            let _ = app.emit_to("main", "screenshot-shortcut", ());
+                        match action {
+                            Action::Clipboard => crate::clipboard_translation::start(&app),
+                            Action::Selection => {
+                                crate::clipboard_translation::start_selection(&app)
+                            }
+                            Action::Screenshot => {
+                                let _ = app.emit_to("main", "screenshot-shortcut", ());
+                            }
                         }
                     });
                 }
@@ -216,7 +281,8 @@ mod platform {
             Err(error) => {
                 let error = Some(format!("启动快捷键服务失败：{error}"));
                 controllers.screenshot.settings.error = error.clone();
-                controllers.clipboard.settings.error = error;
+                controllers.clipboard.settings.error = error.clone();
+                controllers.selection.settings.error = error;
             }
         }
         app.manage(Mutex::new(controllers));
@@ -224,28 +290,22 @@ mod platform {
 
     pub(super) fn settings(
         app: &tauri::AppHandle,
-        clipboard: bool,
+        action: Action,
     ) -> Result<ShortcutSettings, String> {
         let state = app.state::<Mutex<ShortcutControllers>>();
         let controllers = state.lock().map_err(|_| "快捷键状态不可用".to_string())?;
-        Ok(if clipboard {
-            &controllers.clipboard
-        } else {
-            &controllers.screenshot
-        }
-        .settings
-        .clone())
+        Ok(controllers.controller(action).settings.clone())
     }
 
     pub(super) fn configure(
         app: &tauri::AppHandle,
-        clipboard: bool,
+        action: Action,
         enabled: bool,
         shortcut: String,
     ) -> Result<ShortcutSettings, String> {
         let state = app.state::<Mutex<ShortcutControllers>>();
         let mut controllers = state.lock().map_err(|_| "快捷键状态不可用".to_string())?;
-        controllers.configure(&mut NativeRegistrar(app), clipboard, enabled, shortcut)
+        controllers.configure(&mut NativeRegistrar(app), action, enabled, shortcut)
     }
 
     fn parse_shortcut(value: &str) -> Result<Shortcut, String> {
@@ -494,7 +554,7 @@ mod platform {
         }
 
         #[test]
-        fn both_actions_register_and_cross_action_conflicts_preserve_bindings() {
+        fn all_actions_register_and_cross_action_conflicts_preserve_bindings() {
             let directory = TestDirectory::new();
             let mut controllers = ShortcutControllers {
                 screenshot: ShortcutController::load(Ok(directory.path())),
@@ -502,27 +562,35 @@ mod platform {
                     Ok(directory.0.join("clipboard-shortcut-v1.json")),
                     DEFAULT_CLIPBOARD_SHORTCUT,
                 ),
+                selection: ShortcutController::load_for(
+                    Ok(directory.0.join("selection-shortcut-v1.json")),
+                    DEFAULT_SELECTION_SHORTCUT,
+                ),
             };
             let mut registrar = FakeRegistrar::default();
             controllers.start(&mut registrar);
             let original = registrar.registered.clone();
-            assert_eq!(original.len(), 2);
+            assert_eq!(original.len(), 3);
             assert_eq!(
                 controllers.action(DEFAULT_SHORTCUT.parse().unwrap()),
-                Some(false)
+                Some(Action::Screenshot)
             );
             assert_eq!(
                 controllers.action(DEFAULT_CLIPBOARD_SHORTCUT.parse().unwrap()),
-                Some(true)
+                Some(Action::Clipboard)
             );
             assert_eq!(controllers.action("Ctrl+Alt+Y".parse().unwrap()), None);
             registrar.actions.clear();
-            for (clipboard, shortcut) in [
-                (true, DEFAULT_SHORTCUT),
-                (false, DEFAULT_CLIPBOARD_SHORTCUT),
+            for (action, shortcut) in [
+                (Action::Clipboard, DEFAULT_SHORTCUT),
+                (Action::Screenshot, DEFAULT_CLIPBOARD_SHORTCUT),
+                (Action::Selection, DEFAULT_SHORTCUT),
+                (Action::Selection, DEFAULT_CLIPBOARD_SHORTCUT),
+                (Action::Screenshot, DEFAULT_SELECTION_SHORTCUT),
+                (Action::Clipboard, DEFAULT_SELECTION_SHORTCUT),
             ] {
                 assert!(controllers
-                    .configure(&mut registrar, clipboard, true, shortcut.into())
+                    .configure(&mut registrar, action, true, shortcut.into())
                     .unwrap_err()
                     .contains("另一个翻译操作"));
                 assert_eq!(registrar.registered, original);
@@ -531,14 +599,17 @@ mod platform {
             controllers
                 .configure(
                     &mut registrar,
-                    true,
+                    Action::Clipboard,
                     false,
                     DEFAULT_CLIPBOARD_SHORTCUT.into(),
                 )
                 .unwrap();
             assert_eq!(
                 registrar.registered,
-                HashSet::from([DEFAULT_SHORTCUT.parse().unwrap()])
+                HashSet::from([
+                    DEFAULT_SHORTCUT.parse().unwrap(),
+                    DEFAULT_SELECTION_SHORTCUT.parse().unwrap()
+                ])
             );
             let reopened = ShortcutController::load_for(
                 Ok(directory.0.join("clipboard-shortcut-v1.json")),
@@ -560,16 +631,23 @@ mod platform {
                     Ok(clipboard_path),
                     DEFAULT_CLIPBOARD_SHORTCUT,
                 ),
+                selection: ShortcutController::load_for(
+                    Ok(directory.0.join("selection-shortcut-v1.json")),
+                    DEFAULT_SELECTION_SHORTCUT,
+                ),
             };
             let mut registrar = FakeRegistrar::default();
             controllers.start(&mut registrar);
             assert_eq!(
                 registrar.registered,
-                HashSet::from([DEFAULT_SHORTCUT.parse().unwrap()])
+                HashSet::from([
+                    DEFAULT_SHORTCUT.parse().unwrap(),
+                    DEFAULT_SELECTION_SHORTCUT.parse().unwrap()
+                ])
             );
             assert_eq!(
                 controllers.action(DEFAULT_SHORTCUT.parse().unwrap()),
-                Some(false)
+                Some(Action::Screenshot)
             );
             assert!(controllers
                 .clipboard
@@ -581,17 +659,17 @@ mod platform {
             controllers
                 .configure(
                     &mut registrar,
-                    true,
+                    Action::Clipboard,
                     true,
                     DEFAULT_CLIPBOARD_SHORTCUT.into(),
                 )
                 .unwrap();
-            assert_eq!(registrar.registered.len(), 2);
+            assert_eq!(registrar.registered.len(), 3);
             assert!(controllers.clipboard.settings.error.is_none());
         }
 
         #[test]
-        fn clipboard_save_failure_restores_both_actions() {
+        fn clipboard_save_failure_preserves_all_actions() {
             let directory = TestDirectory::new();
             let clipboard_path = directory.0.join("clipboard-shortcut-v1.json");
             let mut controllers = ShortcutControllers {
@@ -600,13 +678,17 @@ mod platform {
                     Ok(clipboard_path.clone()),
                     DEFAULT_CLIPBOARD_SHORTCUT,
                 ),
+                selection: ShortcutController::load_for(
+                    Ok(directory.0.join("selection-shortcut-v1.json")),
+                    DEFAULT_SELECTION_SHORTCUT,
+                ),
             };
             let mut registrar = FakeRegistrar::default();
             controllers.start(&mut registrar);
             let original = registrar.registered.clone();
             fs::create_dir_all(clipboard_path.with_extension("tmp")).unwrap();
             assert!(controllers
-                .configure(&mut registrar, true, true, "Ctrl+Alt+Y".into())
+                .configure(&mut registrar, Action::Clipboard, true, "Ctrl+Alt+Y".into())
                 .is_err());
             assert_eq!(registrar.registered, original);
             assert_eq!(
@@ -614,6 +696,97 @@ mod platform {
                 DEFAULT_CLIPBOARD_SHORTCUT
             );
             assert_eq!(controllers.screenshot.settings.shortcut, DEFAULT_SHORTCUT);
+        }
+
+        #[test]
+        fn selection_custom_disable_and_restart_preserve_other_actions() {
+            let directory = TestDirectory::new();
+            let selection_path = directory.0.join("selection-shortcut-v1.json");
+            let mut controllers = ShortcutControllers {
+                screenshot: ShortcutController::load(Ok(directory.path())),
+                clipboard: ShortcutController::load_for(
+                    Ok(directory.0.join("clipboard-shortcut-v1.json")),
+                    DEFAULT_CLIPBOARD_SHORTCUT,
+                ),
+                selection: ShortcutController::load_for(
+                    Ok(selection_path.clone()),
+                    DEFAULT_SELECTION_SHORTCUT,
+                ),
+            };
+            let mut registrar = FakeRegistrar::default();
+            controllers.start(&mut registrar);
+            assert_eq!(
+                controllers.action(DEFAULT_SELECTION_SHORTCUT.parse().unwrap()),
+                Some(Action::Selection)
+            );
+            controllers
+                .configure(&mut registrar, Action::Selection, true, "Ctrl+Alt+Y".into())
+                .unwrap();
+            assert_eq!(
+                controllers.action("Ctrl+Alt+Y".parse().unwrap()),
+                Some(Action::Selection)
+            );
+            controllers
+                .configure(
+                    &mut registrar,
+                    Action::Selection,
+                    false,
+                    "Ctrl+Alt+Y".into(),
+                )
+                .unwrap();
+            let mut reopened =
+                ShortcutController::load_for(Ok(selection_path), DEFAULT_SELECTION_SHORTCUT);
+            reopened.start(&mut registrar);
+            assert!(!reopened.settings.enabled);
+            assert_eq!(reopened.settings.shortcut, "Ctrl+Alt+Y");
+            assert_eq!(
+                registrar.registered,
+                HashSet::from([
+                    DEFAULT_SHORTCUT.parse().unwrap(),
+                    DEFAULT_CLIPBOARD_SHORTCUT.parse().unwrap(),
+                ])
+            );
+        }
+
+        #[test]
+        fn selection_startup_conflict_can_be_resolved_without_changing_other_actions() {
+            for conflict in [DEFAULT_SHORTCUT, DEFAULT_CLIPBOARD_SHORTCUT] {
+                let directory = TestDirectory::new();
+                let selection_path = directory.0.join("selection-shortcut-v1.json");
+                write_settings(&selection_path, true, conflict).unwrap();
+                let mut controllers = ShortcutControllers {
+                    screenshot: ShortcutController::load(Ok(directory.path())),
+                    clipboard: ShortcutController::load_for(
+                        Ok(directory.0.join("clipboard-shortcut-v1.json")),
+                        DEFAULT_CLIPBOARD_SHORTCUT,
+                    ),
+                    selection: ShortcutController::load_for(
+                        Ok(selection_path),
+                        DEFAULT_SELECTION_SHORTCUT,
+                    ),
+                };
+                let mut registrar = FakeRegistrar::default();
+                controllers.start(&mut registrar);
+                assert!(controllers
+                    .selection
+                    .settings
+                    .error
+                    .as_ref()
+                    .unwrap()
+                    .contains("另一个翻译操作"));
+                assert!(controllers.selection.active.is_none());
+                assert_eq!(registrar.registered.len(), 2);
+                controllers
+                    .configure(
+                        &mut registrar,
+                        Action::Selection,
+                        true,
+                        DEFAULT_SELECTION_SHORTCUT.into(),
+                    )
+                    .unwrap();
+                assert_eq!(registrar.registered.len(), 3);
+                assert!(controllers.selection.settings.error.is_none());
+            }
         }
 
         #[test]

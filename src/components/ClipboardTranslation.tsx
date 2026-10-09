@@ -9,6 +9,7 @@ interface ClipboardSession {
   id: number
   sourceText: string
   error: string | null
+  permissionRequired: boolean
 }
 
 export default function ClipboardTranslation() {
@@ -49,6 +50,16 @@ export default function ClipboardTranslation() {
       setError('关闭快捷翻译失败，请重试。')
     }
   }, [loadSession])
+
+  const openAccessibilitySettings = async () => {
+    setError('')
+    try {
+      await invoke('open_selection_accessibility_settings')
+    }
+    catch {
+      setError('无法打开系统设置，请在系统设置的「隐私与安全性 → 辅助功能」中授权。')
+    }
+  }
 
   useEffect(() => {
     const pending = request.current
@@ -99,7 +110,14 @@ export default function ClipboardTranslation() {
       </header>
       {error && <p role="alert" className="p-4 text-sm text-destructive">{error}</p>}
       {session?.error
-        ? <p role="status" className="p-4 text-sm text-muted-foreground">{session.error}</p>
+        ? (
+            <div className="space-y-3 p-4">
+              <p role="status" className="text-sm text-muted-foreground">{session.error}</p>
+              {session.permissionRequired && (
+                <Button variant="outline" onClick={() => void openAccessibilitySettings()}>打开辅助功能设置</Button>
+              )}
+            </div>
+          )
         : session && (
           <div key={session.id} className="flex min-h-0 flex-1 flex-col">
             <details className="shrink-0 border-b px-4 py-2 text-sm">

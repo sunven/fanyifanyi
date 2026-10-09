@@ -5,7 +5,7 @@ import { Keyboard } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { DEFAULT_CLIPBOARD_SHORTCUT, DEFAULT_SCREENSHOT_SHORTCUT, loadClipboardShortcut, loadScreenshotShortcut, saveClipboardShortcut, saveScreenshotShortcut } from '@/lib/shortcuts'
+import { DEFAULT_CLIPBOARD_SHORTCUT, DEFAULT_SCREENSHOT_SHORTCUT, DEFAULT_SELECTION_SHORTCUT, loadClipboardShortcut, loadScreenshotShortcut, loadSelectionShortcut, saveClipboardShortcut, saveScreenshotShortcut, saveSelectionShortcut } from '@/lib/shortcuts'
 
 function displayShortcut(shortcut: string) {
   if (navigator.platform.toLowerCase().includes('mac')) {
@@ -14,12 +14,13 @@ function displayShortcut(shortcut: string) {
   return shortcut
 }
 
-export default function ShortcutSettings({ kind = 'screenshot' }: { kind?: 'screenshot' | 'clipboard' }) {
+export default function ShortcutSettings({ kind = 'screenshot' }: { kind?: 'screenshot' | 'clipboard' | 'selection' }) {
   const clipboard = kind === 'clipboard'
-  const title = clipboard ? '复制后快捷翻译' : '截图快捷键'
-  const defaultShortcut = clipboard ? DEFAULT_CLIPBOARD_SHORTCUT : DEFAULT_SCREENSHOT_SHORTCUT
-  const loadShortcut = clipboard ? loadClipboardShortcut : loadScreenshotShortcut
-  const saveShortcut = clipboard ? saveClipboardShortcut : saveScreenshotShortcut
+  const selection = kind === 'selection'
+  const title = selection ? '划词翻译' : clipboard ? '复制后快捷翻译' : '截图快捷键'
+  const defaultShortcut = selection ? DEFAULT_SELECTION_SHORTCUT : clipboard ? DEFAULT_CLIPBOARD_SHORTCUT : DEFAULT_SCREENSHOT_SHORTCUT
+  const loadShortcut = selection ? loadSelectionShortcut : clipboard ? loadClipboardShortcut : loadScreenshotShortcut
+  const saveShortcut = selection ? saveSelectionShortcut : clipboard ? saveClipboardShortcut : saveScreenshotShortcut
   const inputId = `${kind}-shortcut`
 
   const [settings, setSettings] = useState<SavedShortcutSettings | null>(null)
@@ -109,8 +110,8 @@ export default function ShortcutSettings({ kind = 'screenshot' }: { kind?: 'scre
       </div>
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-1">
-          <label htmlFor={`${inputId}-enabled`} className="text-sm font-medium">{clipboard ? '启用复制后快捷翻译' : '启用全局截图快捷键'}</label>
-          <p className="text-sm text-muted-foreground">{clipboard ? '复制文字后按快捷键查看译文；仅在触发时读取剪贴板。' : '应用在后台时，也可以用快捷键开始截图翻译。'}</p>
+          <label htmlFor={`${inputId}-enabled`} className="text-sm font-medium">{selection ? '启用划词翻译' : clipboard ? '启用复制后快捷翻译' : '启用全局截图快捷键'}</label>
+          <p className="text-sm text-muted-foreground">{selection ? '在 Chrome 或 Safari 网页中选中文字后按快捷键翻译；首次使用需授权辅助功能。' : clipboard ? '复制文字后按快捷键查看译文；仅在触发时读取剪贴板。' : '应用在后台时，也可以用快捷键开始截图翻译。'}</p>
         </div>
         <input
           id={`${inputId}-enabled`}
@@ -155,7 +156,7 @@ export default function ShortcutSettings({ kind = 'screenshot' }: { kind?: 'scre
             </div>
           )
         : settings
-          ? <p className="text-sm text-muted-foreground">{isTauri() ? `当前平台暂不支持${clipboard ? title : '全局截图快捷键'}。` : `${title}仅在桌面应用中可用。`}</p>
+          ? <p className="text-sm text-muted-foreground">{isTauri() ? `当前平台暂不支持${kind !== 'screenshot' ? title : '全局截图快捷键'}。` : `${title}仅在桌面应用中可用。`}</p>
           : !error && <p className="text-xs text-muted-foreground">正在加载快捷键设置...</p>}
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       {message && <p role="status" className="text-xs text-muted-foreground">{message}</p>}

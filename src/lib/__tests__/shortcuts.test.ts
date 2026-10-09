@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { bindScreenshotShortcut, loadClipboardShortcut, loadScreenshotShortcut, saveClipboardShortcut, saveScreenshotShortcut } from '../shortcuts'
+import { bindScreenshotShortcut, loadClipboardShortcut, loadScreenshotShortcut, loadSelectionShortcut, saveClipboardShortcut, saveScreenshotShortcut, saveSelectionShortcut } from '../shortcuts'
 
 const { invoke, isTauri, listen } = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -27,6 +27,18 @@ describe('screenshot shortcut events', () => {
     invoke.mockClear()
     await expect(loadClipboardShortcut()).resolves.toMatchObject({ supported: false, enabled: false, shortcut: 'Ctrl+Alt+C' })
     await expect(saveClipboardShortcut(true, 'Ctrl+Alt+C')).rejects.toThrow('仅支持 macOS')
+    expect(invoke).not.toHaveBeenCalled()
+  })
+
+  it('uses distinct selection commands and reports browser support accurately', async () => {
+    await loadSelectionShortcut()
+    expect(invoke).toHaveBeenCalledWith('get_selection_shortcut')
+    await saveSelectionShortcut(false, 'Ctrl+Alt+D')
+    expect(invoke).toHaveBeenCalledWith('configure_selection_shortcut', { enabled: false, shortcut: 'Ctrl+Alt+D' })
+    isTauri.mockReturnValue(false)
+    invoke.mockClear()
+    await expect(loadSelectionShortcut()).resolves.toMatchObject({ supported: false, enabled: false, shortcut: 'Ctrl+Alt+D' })
+    await expect(saveSelectionShortcut(true, 'Ctrl+Alt+D')).rejects.toThrow('仅支持 macOS')
     expect(invoke).not.toHaveBeenCalled()
   })
 
