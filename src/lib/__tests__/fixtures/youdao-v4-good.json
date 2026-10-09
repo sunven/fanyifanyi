@@ -1,0 +1,92 @@
+{
+  "ec": {
+    "word": {
+      "usphone": "ɡʊd",
+      "wfs": [
+        {
+          "wf": {
+            "name": "复数",
+            "value": "goods"
+          }
+        },
+        {
+          "wf": {
+            "name": "比较级",
+            "value": "better"
+          }
+        },
+        {
+          "wf": {
+            "name": "最高级",
+            "value": "best"
+          }
+        }
+      ],
+      "trs": [
+        {
+          "pos": "n.",
+          "tran": "善，正义；好事；商品，所有物；<英>（运载的）货物（goods）；优势，利益；<非正式>真货，正品（the goods）；好人，有道德的人（the good）"
+        }
+      ]
+    }
+  },
+  "phrs": {
+    "phrs": [
+      {
+        "headword": "good at",
+        "translation": "善于"
+      },
+      {
+        "headword": "good and",
+        "translation": "完全，非常"
+      }
+    ]
+  },
+  "syno": {
+    "synos": [
+      {
+        "pos": "adj.",
+        "ws": [
+          "fine",
+          "Ok",
+          "great",
+          "religious",
+          "bright"
+        ],
+        "tran": "好的；优良的；愉快的；虔诚的"
+      },
+      {
+        "pos": "n.",
+        "ws": [
+          "benefit",
+          "plus",
+          "mercy"
+        ],
+        "tran": "好处；善行；慷慨的行为"
+      }
+    ]
+  },
+  "rel_word": {
+    "rels": [
+      {
+        "rel": {
+          "pos": "adj.",
+          "words": [
+            {
+              "word": "goody",
+              "tran": "感伤的；伪善的；假正经的"
+            },
+            {
+              "word": "goodly",
+              "tran": "漂亮的；优秀的；相当多的"
+            },
+            {
+              "word": "goodish",
+              "tran": "相当好的；颇的"
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

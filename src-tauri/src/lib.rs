@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use tauri::Manager;
 use tauri_plugin_http::reqwest;
 use tauri_plugin_log::{Target, TargetKind};
+use unicode_segmentation::UnicodeSegmentation;
 
 mod clipboard_translation;
 mod history;
@@ -72,24 +73,44 @@ fn secure_storage_remove(
     store.remove(&key)
 }
 
-#[tauri::command]
-async fn get_dict_data(q: String) -> Result<serde_json::Value, String> {
-    let dicts = serde_json::json!({
-        "count": 99,
-        "dicts": [["simple", "phrs", "syno", "ec", "rel_word"]]
-    });
-
-    let url = format!(
-        "https://dict.youdao.com/jsonapi?jsonversion=2&client=mobile&q={}&dicts={}",
-        urlencoding::encode(&q),
-        urlencoding::encode(&dicts.to_string())
+fn youdao_dictionary_request(q: &str) -> reqwest::RequestBuilder {
+    // Fixed Youdao web protocol key, not a user API credential.
+    const KEY: &str = "Mk6hqtUp33DGGtoS63tTJbMUYjRrG1Lu";
+    let word = format!("{q}webdict");
+    let t = (word.graphemes(true).count() % 10).to_string();
+    let salt = format!("{:x}", md5::compute(word.as_bytes()));
+    let sign = format!(
+        "{:x}",
+        md5::compute(format!("web{q}{t}{KEY}{salt}").as_bytes())
     );
 
-    let response = match reqwest::get(&url).await {
+    reqwest::Client::new()
+        .post("https://dict.youdao.com/jsonapi_s?doctype=json&jsonversion=4")
+        .form(&[
+            ("q", q),
+            ("le", "en"),
+            ("client", "web"),
+            ("t", &t),
+            ("sign", &sign),
+            ("keyfrom", "webdict"),
+        ])
+}
+
+#[tauri::command]
+async fn get_dict_data(q: String) -> Result<serde_json::Value, String> {
+    let response = match youdao_dictionary_request(&q).send().await {
         Ok(resp) => resp,
         Err(e) => {
             log::error!("词典 API 请求失败 (网络错误): {}", e);
             return Err(format!("网络请求失败: {}", e));
+        }
+    };
+
+    let response = match response.error_for_status() {
+        Ok(resp) => resp,
+        Err(e) => {
+            log::error!("词典 API 请求失败 (HTTP 错误): {}", e);
+            return Err(format!("词典服务请求失败: {}", e));
         }
     };
 
@@ -1004,9 +1025,52 @@ mod tests {
         is_screenshot_temp_path, logical_work_area, normalize_openai_base_url,
         parse_google_translation, parse_microsoft_translation, recognize_screenshot_text,
         screenshot_temp_path, stored_model_api_key, translate_with_google_target_at_endpoint,
-        validate_microsoft_token, vision_roi, CapturedScreenshot, ScreenRegion, ScreenshotStore,
+        validate_microsoft_token, vision_roi, youdao_dictionary_request, CapturedScreenshot,
+        ScreenRegion, ScreenshotStore,
     };
     use crate::secret_store::FileSecretStore;
+
+    #[test]
+    fn dictionary_request_matches_youdao_v4_protocol() {
+        // Fixed vectors from the Easydict V4 protocol, hashed independently with Python hashlib.
+        for (query, t, sign) in [
+            ("good", "1", "96eea02156f165866c59ad446fcfa7ed"),
+            ("look up", "4", "2b6bb24d534cb0ceb1f008acd03b54e0"),
+            ("cafe\u{301}", "1", "0f89f4b0b6a001e664fe63ddc718c762"),
+            ("👩‍👩‍👧‍👦", "8", "41aa9fce5207b1d930b6fa4aa4e5791c"),
+            ("  a&b+c= 中文?  ", "1", "42ff49c28e93fe451d07cfe3b76af23f"),
+        ] {
+            let request = youdao_dictionary_request(query).build().unwrap();
+            assert_eq!(request.method(), "POST");
+            assert_eq!(
+                request.url().as_str(),
+                "https://dict.youdao.com/jsonapi_s?doctype=json&jsonversion=4"
+            );
+            assert_eq!(
+                request.headers()["content-type"],
+                "application/x-www-form-urlencoded"
+            );
+
+            let body = std::str::from_utf8(request.body().unwrap().as_bytes().unwrap()).unwrap();
+            let parameters = super::reqwest::Url::parse(&format!("http://localhost/?{body}"))
+                .unwrap()
+                .query_pairs()
+                .into_owned()
+                .collect::<std::collections::BTreeMap<_, _>>();
+            let expected = [
+                ("q", query),
+                ("le", "en"),
+                ("client", "web"),
+                ("keyfrom", "webdict"),
+                ("t", t),
+                ("sign", sign),
+            ]
+            .map(|(key, value)| (key.to_string(), value.to_string()))
+            .into_iter()
+            .collect();
+            assert_eq!(parameters, expected, "query: {query:?}");
+        }
+    }
 
     struct GoogleTestResponse {
         status: &'static str,

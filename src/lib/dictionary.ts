@@ -57,17 +57,6 @@ function text(value: unknown): string | null {
   return value
 }
 
-function readSense(value: string): DictionarySense {
-  const space = value.indexOf(' ')
-  if (space === -1) {
-    return { partOfSpeech: '', meaning: value }
-  }
-  return {
-    partOfSpeech: value.slice(0, space),
-    meaning: value.slice(space + 1),
-  }
-}
-
 function readForms(word: Record<string, unknown>): DictionaryForm[] {
   return asArray(word.wfs).flatMap((item) => {
     const form = asRecord(asRecord(item)?.wf)
@@ -82,22 +71,21 @@ function readForms(word: Record<string, unknown>): DictionaryForm[] {
 
 function readSenses(word: Record<string, unknown>): DictionarySense[] {
   return asArray(word.trs).flatMap((item) => {
-    const first = asRecord(asArray(asRecord(item)?.tr)[0])
-    const line = text(asArray(asRecord(first?.l)?.i)[0])
-    if (!line) {
+    const sense = asRecord(item)
+    const meaning = text(sense?.tran)
+    if (!meaning) {
       return []
     }
-    return [readSense(line)]
+    return [{ partOfSpeech: text(sense?.pos) ?? '', meaning }]
   })
 }
 
 function readPhrases(response: Record<string, unknown>): DictionaryPhrase[] {
   const phrs = asRecord(response.phrs)
   return asArray(phrs?.phrs).flatMap((item) => {
-    const phrase = asRecord(asRecord(item)?.phr)
-    const headword = text(asRecord(asRecord(phrase?.headword)?.l)?.i)
-    const first = asRecord(asArray(phrase?.trs)[0])
-    const translation = text(asRecord(asRecord(first?.tr)?.l)?.i)
+    const phrase = asRecord(item)
+    const headword = text(phrase?.headword)
+    const translation = text(phrase?.translation)
     if (!headword || !translation) {
       return []
     }
@@ -108,9 +96,9 @@ function readPhrases(response: Record<string, unknown>): DictionaryPhrase[] {
 function readSynonyms(response: Record<string, unknown>): DictionarySynonym[] {
   const syno = asRecord(response.syno)
   return asArray(syno?.synos).flatMap((item) => {
-    const group = asRecord(asRecord(item)?.syno)
+    const group = asRecord(item)
     const words = asArray(group?.ws).flatMap((word) => {
-      const value = text(asRecord(word)?.w)
+      const value = text(word)
       return value ? [value] : []
     })
     if (!group || words.length === 0) {
@@ -149,7 +137,7 @@ function readRelatedWords(response: Record<string, unknown>): DictionaryRelated[
 
 export function readDictionaryEntry(response: unknown, headword: string): DictionaryEntry | null {
   const record = asRecord(response)
-  const word = asRecord(asArray(asRecord(record?.ec)?.word)[0])
+  const word = asRecord(asRecord(record?.ec)?.word)
   if (!record || !word) {
     return null
   }

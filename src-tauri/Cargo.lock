@@ -880,6 +880,7 @@ name = "fanyifanyi"
 version = "0.1.43"
 dependencies = [
  "log",
+ "md5",
  "objc2",
  "objc2-core-foundation",
  "objc2-foundation",
@@ -893,6 +894,7 @@ dependencies = [
  "tauri-plugin-log",
  "tauri-plugin-process",
  "tauri-plugin-updater",
+ "unicode-segmentation",
  "urlencoding",
 ]
 
@@ -2063,6 +2065,12 @@ name = "matches"
 version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2532096657941c2fea9c289d370a250971c689d4f143798ff67113ec042024a5"
+
+[[package]]
+name = "md5"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ebb8d8732c6a6df3d8f032a82911cfc747e00efb95cc46e8d0acd5b5b88570c"
 
 [[package]]
 name = "memchr"
