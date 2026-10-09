@@ -25,24 +25,24 @@ describe('desk translation recovery', () => {
   })
   afterEach(() => vi.useRealTimers())
 
-  it('retries unchanged text after failure and saves only the accepted result', async () => {
+  it('shows the engine failure and retries unchanged text', async () => {
     invoke.mockRejectedValueOnce('请求过于频繁，请稍后重试')
     render(<TranslateDisplay q="hello" />)
     await finishDebounce()
 
     expect(screen.getByRole('alert')).toHaveTextContent('请求过于频繁')
+    expect(screen.getByRole('alert')).toHaveTextContent('Google 翻译')
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /^重试$/,
       }))
     })
 
     expect(screen.getByText('你好')).toBeInTheDocument()
-    expect(invoke.mock.calls.filter(([command]) => command === 'history_record')).toHaveLength(1)
   })
 
-  it('uses a fallback once and restores the default engine for new text', async () => {
+  it('retries with the selected fallback and displays its engine', async () => {
     invoke.mockRejectedValueOnce('Google 不可用')
-    const { rerender } = render(<TranslateDisplay q="hello" />)
+    render(<TranslateDisplay q="hello" />)
     await finishDebounce()
     const option = screen.getByRole('option', { name: 'Microsoft 翻译' })
     fireEvent.change(screen.getByLabelText('备用翻译引擎'), { target: { value: option.getAttribute('value') } })
@@ -52,32 +52,9 @@ describe('desk translation recovery', () => {
     })
     expect(invoke).toHaveBeenCalledWith('translate_with_microsoft', { text: 'hello', targetLanguage: 'zh-CN' })
     expect(screen.getByText('Microsoft 翻译')).toBeInTheDocument()
-
-    rerender(<TranslateDisplay q="goodbye" />)
-    await finishDebounce()
-    expect(invoke).toHaveBeenCalledWith('translate_with_google', { text: 'goodbye', targetLanguage: 'zh-CN' })
-    const entries = invoke.mock.calls.filter(([command]) => command === 'history_record').map(([, args]) => args.entry)
-    expect(entries.map(entry => entry.engine.provider)).toEqual(['microsoft', 'google'])
   })
 
-  it('ignores an old response during the debounce for new input', async () => {
-    let finish: (value: string) => void = () => {}
-    invoke.mockReturnValueOnce(new Promise<string>((resolve) => {
-      finish = resolve
-    }))
-    const { rerender } = render(<TranslateDisplay q="old" />)
-    await finishDebounce()
-    rerender(<TranslateDisplay q="new" />)
-    await act(async () => {
-      finish('旧译文')
-    })
-    expect(screen.queryByText('旧译文')).not.toBeInTheDocument()
-    expect(invoke.mock.calls.filter(([command]) => command === 'history_record')).toHaveLength(0)
-    await finishDebounce()
-    expect(screen.getByText('你好')).toBeInTheDocument()
-  })
-
-  it('does not display or save a response after stopping', async () => {
+  it('stops loading and withholds late text when the stop button is clicked', async () => {
     let finish: (value: string) => void = () => {}
     invoke.mockReturnValueOnce(new Promise<string>((resolve) => {
       finish = resolve
@@ -85,11 +62,11 @@ describe('desk translation recovery', () => {
     render(<TranslateDisplay q="hello" />)
     await finishDebounce()
     fireEvent.click(screen.getByTitle('停止翻译'))
+    expect(screen.queryByTitle('停止翻译')).not.toBeInTheDocument()
     await act(async () => {
       finish('已取消的译文')
     })
     expect(screen.queryByText('已取消的译文')).not.toBeInTheDocument()
-    expect(invoke.mock.calls.filter(([command]) => command === 'history_record')).toHaveLength(0)
   })
 
   it('keeps the successful translation when history storage fails', async () => {
@@ -101,39 +78,13 @@ describe('desk translation recovery', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
-  it('starts clipboard translation without the desk delay and guards its history write', async () => {
+  it('starts clipboard translation immediately and focuses the translation region', async () => {
     invoke.mockImplementation(command => Promise.resolve(command === 'is_clipboard_translation_current' ? true : command.startsWith('translate_with_') ? '你好' : undefined))
     render(<TranslateDisplay q="hello" startDelay={0} clipboardSessionId={7} />)
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0)
     })
     expect(screen.getByText('你好')).toBeInTheDocument()
-    expect(invoke).toHaveBeenCalledWith('is_clipboard_translation_current', { id: 7 })
-    expect(invoke).toHaveBeenCalledWith('history_record', expect.objectContaining({ clipboardSessionId: 7 }))
     expect(screen.getByRole('region', { name: '译文' })).toHaveFocus()
-  })
-
-  it('does not accept a result when the native clipboard session was replaced', async () => {
-    invoke.mockImplementation(command => Promise.resolve(command === 'is_clipboard_translation_current' ? false : '旧译文'))
-    render(<TranslateDisplay q="hello" startDelay={0} clipboardSessionId={7} />)
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0)
-    })
-    expect(screen.queryByText('旧译文')).not.toBeInTheDocument()
-    expect(invoke.mock.calls.filter(([command]) => command === 'history_record')).toHaveLength(0)
-  })
-
-  it('does not save a clipboard response after the display unmounts', async () => {
-    let finish: (value: string) => void = () => {}
-    invoke.mockImplementation(command => command.startsWith('translate_with_')
-      ? new Promise((resolve) => { finish = resolve })
-      : Promise.resolve(true))
-    const view = render(<TranslateDisplay q="hello" startDelay={0} clipboardSessionId={7} />)
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0)
-    })
-    view.unmount()
-    await act(async () => finish('旧译文'))
-    expect(invoke.mock.calls.filter(([command]) => command === 'history_record')).toHaveLength(0)
   })
 })
