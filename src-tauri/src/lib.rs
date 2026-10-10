@@ -16,15 +16,13 @@ mod screenshot_store;
 mod secret_store;
 mod selection_translation;
 mod shortcuts;
+mod web_translation;
 
 use screenshot_store::{is_screenshot_temp_path, ScreenshotStore};
 use secret_store::FileSecretStore;
+use web_translation::WebTranslator;
 
 const SECRETS_FILE_NAME: &str = "secrets.json";
-const GOOGLE_TRANSLATE_ENDPOINT: &str = "https://translate.googleapis.com/translate_a/single";
-const GOOGLE_MAX_RATE_LIMIT_RETRIES: usize = 2;
-const GOOGLE_MAX_RETRY_AFTER_SECS: u64 = 10;
-const MICROSOFT_TRANSLATOR_USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36 Edg/124.0";
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -488,61 +486,6 @@ fn recognize_screenshot_text_impl(
     Err("截图翻译第一版仅支持 macOS".to_string())
 }
 
-fn parse_google_translation(response_text: &str) -> Result<String, String> {
-    let json: serde_json::Value = serde_json::from_str(response_text)
-        .map_err(|error| format!("解析 Google 翻译响应失败: {}", error))?;
-
-    let translated_parts = json
-        .get("sentences")
-        .and_then(|value| value.as_array())
-        .ok_or_else(|| "Google 翻译响应缺少 sentences".to_string())?
-        .iter()
-        .filter_map(|item| item.get("trans").and_then(|value| value.as_str()))
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .collect::<Vec<_>>();
-
-    if translated_parts.is_empty() {
-        return Err("Google 翻译响应缺少 sentences[].trans".to_string());
-    }
-
-    Ok(translated_parts.join(" "))
-}
-
-fn parse_microsoft_translation(response_text: &str) -> Result<String, String> {
-    let json: serde_json::Value = serde_json::from_str(response_text)
-        .map_err(|error| format!("解析 Microsoft 翻译响应失败: {}", error))?;
-
-    let translated_parts = json
-        .as_array()
-        .ok_or_else(|| "Microsoft 翻译响应格式无效".to_string())?
-        .iter()
-        .flat_map(|item| {
-            item.get("translations")
-                .and_then(|value| value.as_array())
-                .into_iter()
-                .flatten()
-        })
-        .filter_map(|item| item.get("text").and_then(|value| value.as_str()))
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .collect::<Vec<_>>();
-
-    if translated_parts.is_empty() {
-        return Err("Microsoft 翻译响应缺少 translations[].text".to_string());
-    }
-
-    Ok(translated_parts.join(" "))
-}
-
-fn validate_microsoft_token(token: &str) -> Result<(), String> {
-    if token.split('.').count() == 3 {
-        return Ok(());
-    }
-
-    Err("Microsoft 翻译 token 格式无效".to_string())
-}
-
 fn validate_ai_request_config(
     base_url: String,
     api_key: String,
@@ -703,233 +646,21 @@ async fn translate_with_ai(
 }
 
 #[tauri::command]
-async fn translate_with_google(text: String, target_language: String) -> Result<String, String> {
-    translate_with_google_target(text, &target_language).await
-}
-
-async fn translate_with_google_target(
+async fn translate_with_google(
+    translator: tauri::State<'_, WebTranslator>,
     text: String,
-    target_language: &str,
+    target_language: String,
 ) -> Result<String, String> {
-    translate_with_google_target_at_endpoint(text, target_language, GOOGLE_TRANSLATE_ENDPOINT).await
-}
-
-fn google_rate_limit_delay(headers: &reqwest::header::HeaderMap, retry_index: usize) -> Duration {
-    let retry_after_secs = headers
-        .get(reqwest::header::RETRY_AFTER)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.parse::<u64>().ok())
-        .map(|seconds| seconds.min(GOOGLE_MAX_RETRY_AFTER_SECS));
-
-    Duration::from_secs(retry_after_secs.unwrap_or(1_u64 << retry_index))
-}
-
-async fn wait_for_google_retry(delay: Duration) -> Result<(), String> {
-    if delay.is_zero() {
-        return Ok(());
-    }
-
-    tauri::async_runtime::spawn_blocking(move || std::thread::sleep(delay))
-        .await
-        .map_err(|error| format!("等待 Google 翻译重试失败: {error}"))
-}
-
-async fn translate_with_google_target_at_endpoint(
-    text: String,
-    target_language: &str,
-    endpoint: &str,
-) -> Result<String, String> {
-    if text.trim().is_empty() {
-        return Ok(String::new());
-    }
-
-    let url = format!(
-        "{}?client=gtx&dt=t&dj=1&ie=UTF-8&sl=auto&tl={}&q={}",
-        endpoint,
-        target_language,
-        urlencoding::encode(&text)
-    );
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()
-        .map_err(|error| format!("创建 Google 翻译客户端失败: {}", error))?;
-
-    for retry_index in 0..=GOOGLE_MAX_RATE_LIMIT_RETRIES {
-        let response = client
-            .get(&url)
-            .header("content-type", "application/json")
-            .send()
-            .await
-            .map_err(|error| {
-                if error.is_timeout() {
-                    "Google 翻译超时，请检查网络连接".to_string()
-                } else if error.is_connect() {
-                    format!(
-                        "连接 Google 翻译失败，请检查网络或代理设置。原始错误：{}",
-                        error
-                    )
-                } else {
-                    format!("发送 Google 翻译请求失败: {}", error)
-                }
-            })?;
-
-        let status = response.status();
-        if status == reqwest::StatusCode::TOO_MANY_REQUESTS
-            && retry_index < GOOGLE_MAX_RATE_LIMIT_RETRIES
-        {
-            let delay = google_rate_limit_delay(response.headers(), retry_index);
-            log::warn!(
-                "Google 翻译触发限流，{} 秒后进行第 {} 次重试",
-                delay.as_secs(),
-                retry_index + 1
-            );
-            wait_for_google_retry(delay).await?;
-            continue;
-        }
-
-        let response_text = response
-            .text()
-            .await
-            .map_err(|error| format!("读取 Google 翻译响应失败: {}", error))?;
-
-        if !status.is_success() {
-            let detail = response_detail(&response_text);
-            let prefix = if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-                format!(
-                    "Google 翻译请求过于频繁（HTTP 429，已自动重试 {} 次）",
-                    GOOGLE_MAX_RATE_LIMIT_RETRIES
-                )
-            } else {
-                format!("Google 翻译请求失败（HTTP {}）", status.as_u16())
-            };
-            if detail.is_empty() {
-                return Err(prefix);
-            }
-            return Err(format!("{}：{}", prefix, detail));
-        }
-
-        return parse_google_translation(&response_text);
-    }
-
-    unreachable!("Google 翻译重试循环必须返回结果")
+    translator.google(&text, &target_language).await
 }
 
 #[tauri::command]
 async fn translate_with_microsoft(
+    translator: tauri::State<'_, WebTranslator>,
     text: String,
     target_language: String,
 ) -> Result<String, String> {
-    translate_with_microsoft_target(text, &target_language).await
-}
-
-async fn translate_with_microsoft_target(
-    text: String,
-    target_language: &str,
-) -> Result<String, String> {
-    if text.trim().is_empty() {
-        return Ok(String::new());
-    }
-
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()
-        .map_err(|error| format!("创建 Microsoft 翻译客户端失败: {}", error))?;
-
-    let auth_response = client
-        .get("https://edge.microsoft.com/translate/auth")
-        .header("user-agent", MICROSOFT_TRANSLATOR_USER_AGENT)
-        .send()
-        .await
-        .map_err(|error| {
-            if error.is_timeout() {
-                "获取 Microsoft 翻译 token 超时，请检查网络连接".to_string()
-            } else if error.is_connect() {
-                format!(
-                    "连接 Microsoft 翻译 token 服务失败，请检查网络或代理设置。原始错误：{}",
-                    error
-                )
-            } else {
-                format!("获取 Microsoft 翻译 token 失败: {}", error)
-            }
-        })?;
-
-    let auth_status = auth_response.status();
-    let token = auth_response
-        .text()
-        .await
-        .map_err(|error| format!("读取 Microsoft 翻译 token 失败: {}", error))?;
-
-    if !auth_status.is_success() {
-        let detail = response_detail(&token);
-        if detail.is_empty() {
-            return Err(format!(
-                "获取 Microsoft 翻译 token 失败（HTTP {}）",
-                auth_status.as_u16()
-            ));
-        }
-        return Err(format!(
-            "获取 Microsoft 翻译 token 失败（HTTP {}）：{}",
-            auth_status.as_u16(),
-            detail
-        ));
-    }
-
-    let token = token.trim();
-    if token.is_empty() {
-        return Err("Microsoft 翻译 token 为空".to_string());
-    }
-    validate_microsoft_token(token)?;
-
-    let url = format!(
-        "https://api-edge.cognitive.microsofttranslator.com/translate?api-version=3.0&to={}",
-        target_language
-    );
-    let body = serde_json::json!([{ "Text": text }]).to_string();
-
-    let response = client
-        .post(&url)
-        .bearer_auth(token)
-        .header("content-type", "application/json")
-        .header("user-agent", MICROSOFT_TRANSLATOR_USER_AGENT)
-        .header("ocp-apim-subscription-region", "global")
-        .body(body)
-        .send()
-        .await
-        .map_err(|error| {
-            if error.is_timeout() {
-                "Microsoft 翻译超时，请检查网络连接".to_string()
-            } else if error.is_connect() {
-                format!(
-                    "连接 Microsoft 翻译失败，请检查网络或代理设置。原始错误：{}",
-                    error
-                )
-            } else {
-                format!("发送 Microsoft 翻译请求失败: {}", error)
-            }
-        })?;
-
-    let status = response.status();
-    let response_text = response
-        .text()
-        .await
-        .map_err(|error| format!("读取 Microsoft 翻译响应失败: {}", error))?;
-
-    if !status.is_success() {
-        let detail = response_detail(&response_text);
-        if detail.is_empty() {
-            return Err(format!(
-                "Microsoft 翻译请求失败（HTTP {}）",
-                status.as_u16()
-            ));
-        }
-        return Err(format!(
-            "Microsoft 翻译请求失败（HTTP {}）：{}",
-            status.as_u16(),
-            detail
-        ));
-    }
-
-    parse_microsoft_translation(&response_text)
+    translator.bing(&text, &target_language).await
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -948,6 +679,7 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            app.manage(WebTranslator::new()?);
             let path = app.path().app_data_dir()?.join(SECRETS_FILE_NAME);
             app.manage(FileSecretStore::new(path));
             app.manage(history::HistoryStore::new(
@@ -1010,23 +742,12 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        io::{self, Read, Write},
-        net::TcpListener,
-        sync::{
-            atomic::{AtomicUsize, Ordering},
-            Arc,
-        },
-        thread,
-        time::{Duration, Instant, SystemTime, UNIX_EPOCH},
-    };
+    use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
     use super::{
         is_screenshot_temp_path, logical_work_area, normalize_openai_base_url,
-        parse_google_translation, parse_microsoft_translation, recognize_screenshot_text,
-        screenshot_temp_path, stored_model_api_key, translate_with_google_target_at_endpoint,
-        validate_microsoft_token, vision_roi, youdao_dictionary_request, CapturedScreenshot,
-        ScreenRegion, ScreenshotStore,
+        recognize_screenshot_text, screenshot_temp_path, stored_model_api_key, vision_roi,
+        youdao_dictionary_request, CapturedScreenshot, ScreenRegion, ScreenshotStore,
     };
     use crate::secret_store::FileSecretStore;
 
@@ -1070,65 +791,6 @@ mod tests {
             .collect();
             assert_eq!(parameters, expected, "query: {query:?}");
         }
-    }
-
-    struct GoogleTestResponse {
-        status: &'static str,
-        retry_after_secs: Option<u64>,
-        body: &'static str,
-    }
-
-    fn run_google_translation_test(
-        responses: Vec<GoogleTestResponse>,
-    ) -> (Result<String, String>, usize) {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        listener.set_nonblocking(true).unwrap();
-        let endpoint = format!(
-            "http://{}/translate_a/single",
-            listener.local_addr().unwrap()
-        );
-        let request_count = Arc::new(AtomicUsize::new(0));
-        let server_request_count = Arc::clone(&request_count);
-        let server = thread::spawn(move || {
-            let deadline = Instant::now() + Duration::from_secs(1);
-            while server_request_count.load(Ordering::SeqCst) < responses.len()
-                && Instant::now() < deadline
-            {
-                match listener.accept() {
-                    Ok((mut stream, _)) => {
-                        let mut request = [0_u8; 4096];
-                        stream.read(&mut request).unwrap();
-                        let attempt = server_request_count.fetch_add(1, Ordering::SeqCst);
-                        let response = &responses[attempt];
-                        let retry_after = response
-                            .retry_after_secs
-                            .map(|seconds| format!("Retry-After: {seconds}\r\n"))
-                            .unwrap_or_default();
-                        write!(
-                            stream,
-                            "HTTP/1.1 {}\r\nContent-Length: {}\r\n{retry_after}Connection: close\r\n\r\n{}",
-                            response.status,
-                            response.body.len(),
-                            response.body
-                        )
-                        .unwrap();
-                    }
-                    Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
-                        thread::sleep(Duration::from_millis(5));
-                    }
-                    Err(error) => panic!("测试服务器接收请求失败: {error}"),
-                }
-            }
-        });
-
-        let result = tauri::async_runtime::block_on(translate_with_google_target_at_endpoint(
-            "hello".to_string(),
-            "zh-CN",
-            &endpoint,
-        ));
-        server.join().unwrap();
-
-        (result, request_count.load(Ordering::SeqCst))
     }
 
     #[test]
@@ -1310,67 +972,4 @@ mod tests {
 
         assert_eq!(err, "截图临时文件路径无效");
     }
-
-    #[test]
-    fn parses_google_translation_sentences() {
-        let response = r#"{"sentences":[{"trans":"你好！"},{"trans":"世界。"}],"src":"en"}"#;
-
-        assert_eq!(parse_google_translation(response).unwrap(), "你好！ 世界。");
-    }
-
-    #[test]
-    fn retries_google_translation_after_rate_limit() {
-        let (result, request_count) = run_google_translation_test(vec![
-            GoogleTestResponse {
-                status: "429 Too Many Requests",
-                retry_after_secs: Some(0),
-                body: "rate limited",
-            },
-            GoogleTestResponse {
-                status: "200 OK",
-                retry_after_secs: None,
-                body: r#"{"sentences":[{"trans":"你好"}]}"#,
-            },
-        ]);
-
-        assert_eq!(request_count, 2);
-        assert_eq!(result.unwrap(), "你好");
-    }
-
-    #[test]
-    fn stops_retrying_google_translation_after_two_rate_limits() {
-        let rate_limit_response = || GoogleTestResponse {
-            status: "429 Too Many Requests",
-            retry_after_secs: Some(0),
-            body: "rate limited",
-        };
-        let (result, request_count) = run_google_translation_test(vec![
-            rate_limit_response(),
-            rate_limit_response(),
-            rate_limit_response(),
-        ]);
-
-        let error = result.unwrap_err();
-
-        assert_eq!(request_count, 3);
-        assert!(error.contains("HTTP 429"));
-        assert!(error.contains("已自动重试 2 次"));
-    }
-
-    #[test]
-    fn parses_microsoft_translation_texts() {
-        let response = r#"[{"translations":[{"text":"你好！"},{"text":"世界。"}],"detectedLanguage":{"language":"en"}}]"#;
-
-        assert_eq!(
-            parse_microsoft_translation(response).unwrap(),
-            "你好！ 世界。"
-        );
-    }
-
-    #[test]
-    fn rejects_invalid_microsoft_tokens() {
-        assert!(validate_microsoft_token("Client Browser Version not supported").is_err());
-        assert!(validate_microsoft_token("header.payload.signature").is_ok());
-    }
-
 }
