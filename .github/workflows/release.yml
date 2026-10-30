@@ -9,52 +9,10 @@ permissions:
   contents: write
 
 jobs:
-  create-release:
-    name: Create Release
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Setup git-cliff
-        uses: kenji-miyake/setup-git-cliff@v2
-
-      - name: Generate release notes
-        run: |
-          git-cliff --tag ${{ github.ref_name }} --strip all > release-notes.md
-
-      - name: Create GitHub Release
-        run: |
-          gh release create ${{ github.ref_name }} \
-            --title "Release ${{ github.ref_name }}" \
-            --notes-file release-notes.md
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   build-tauri:
-    needs: create-release
+    runs-on: macos-latest
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: macos-latest
-            target: aarch64-apple-darwin
-            arch: aarch64
-          # - platform: macos-latest
-          #   target: x86_64-apple-darwin
-          #   arch: x86_64
-          # - platform: ubuntu-22.04
-          #   target: x86_64-unknown-linux-gnu
-          #   arch: x86_64
-          # - platform: windows-latest
-          #   target: x86_64-pc-windows-msvc
-          #   arch: x86_64
-
-    runs-on: ${{ matrix.platform }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -77,82 +35,42 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: aarch64-apple-darwin
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-          shared-key: tauri-${{ matrix.target }}
+          shared-key: tauri-aarch64-apple-darwin
           cache-on-failure: true
 
-      # - name: Install dependencies (Ubuntu only)
-      #   if: matrix.platform == 'ubuntu-22.04'
-      #   run: |
-      #     sudo apt-get update
-      #     sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-
-      - name: Build Tauri app
-        run: pnpm tauri build --target ${{ matrix.target }} --bundles dmg,app
+      - name: Build and publish
+        uses: tauri-apps/tauri-action@v1
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_AUTH_REDIRECT_URL: ${{ vars.VITE_AUTH_REDIRECT_URL || 'fanyifanyi://auth/callback' }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'fanyifanyi v__VERSION__'
+          releaseBody: |
+            ## fanyifanyi v__VERSION__
 
-      - name: Upload release assets (macOS)
-        if: matrix.platform == 'macos-latest'
+            本次更新说明见 [CHANGELOG](https://github.com/sunven/fanyifanyi/blob/master/CHANGELOG.md)。
+          releaseDraft: false
+          prerelease: false
+          generateReleaseNotes: true
+          uploadUpdaterJson: true
+          retryAttempts: 2
+          args: '--target aarch64-apple-darwin --bundles dmg,app'
+
+      - name: Verify updater metadata
         run: |
-          DMG_PATH=$(find src-tauri/target/${{ matrix.target }}/release/bundle/dmg -name "*.dmg" | head -n 1)
-          if [ -z "$DMG_PATH" ] || [ ! -f "$DMG_PATH" ]; then
-            echo "❌ Error: DMG installer not found"
-            exit 1
-          fi
-
-          TARBALL=$(find src-tauri/target/${{ matrix.target }}/release/bundle/macos -name "*.app.tar.gz" ! -name "*.sig" | head -n 1)
-          if [ -z "$TARBALL" ] || [ ! -f "$TARBALL" ]; then
-            echo "❌ Error: Updater tarball not found"
-            exit 1
-          fi
-
-          SIG_SOURCE="${TARBALL}.sig"
-          if [ ! -f "$SIG_SOURCE" ]; then
-            echo "❌ Error: Updater signature not found at $SIG_SOURCE"
-            exit 1
-          fi
-
-          # DMG installer
-          gh release upload ${{ github.ref_name }} "$DMG_PATH" --clobber
-
-          # App bundle (tarball) for updater
-          # Tauri 2.x automatically generates .app.tar.gz and .sig for updater when signing is enabled
-          cp "$TARBALL" "fanyifanyi_${{ matrix.arch }}.app.tar.gz"
-          gh release upload ${{ github.ref_name }} "fanyifanyi_${{ matrix.arch }}.app.tar.gz" --clobber
-          echo "✓ Uploaded tarball"
-
-          cp "$SIG_SOURCE" "fanyifanyi_${{ matrix.arch }}.app.tar.gz.sig"
-          gh release upload ${{ github.ref_name }} "fanyifanyi_${{ matrix.arch }}.app.tar.gz.sig" --clobber
-          echo "✓ Uploaded signature file"
-
-      - name: Collect release notes for updater
-        if: matrix.platform == 'macos-latest'
-        run: |
-          gh release view ${{ github.ref_name }} --json body --jq '.body' > release-notes.md
-
-      - name: Generate unified latest.json
-        if: matrix.platform == 'macos-latest'
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          SIG_CONTENT=$(cat "fanyifanyi_${{ matrix.arch }}.app.tar.gz.sig")
-          jq -n \
-            --arg version "$VERSION" \
-            --rawfile notes release-notes.md \
-            --arg pub_date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            --arg sig "$SIG_CONTENT" \
-            '{version: $version, notes: $notes, pub_date: $pub_date, platforms: {"darwin-aarch64": {"signature": $sig, "url": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/fanyifanyi_aarch64.app.tar.gz"}}}' > latest.json
-
-          gh release upload ${{ github.ref_name }} latest.json --clobber
-          gh release upload latest latest.json --clobber || true
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          gh release download "$GITHUB_REF_NAME" -p latest.json -O /tmp/latest.json --clobber
+          jq -e '.version != null
+            and .platforms["darwin-aarch64"].url != null
+            and .platforms["darwin-aarch64"].signature != null' /tmp/latest.json > /dev/null
+          echo "✓ latest.json contains darwin-aarch64 entry"
