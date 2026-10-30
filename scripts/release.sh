@@ -88,8 +88,7 @@ git tag -a "v${VERSION}" -m "Release v${VERSION}
 echo "⬆️  步骤 5/5: 推送到远程仓库..."
 echo ""
 echo "准备推送到远程仓库，这将触发 GitHub Actions 自动构建和发布。"
-read -p "是否继续? (y/N) " -n 1 -r
-echo ""
+read -p "是否继续? (y/N) " -r
 
 if [[ $REPLY =~ ^[Yy]$ ]]; then
   git push origin master
