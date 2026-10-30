@@ -21,6 +21,7 @@ const updateState: UpdateContextValue = {
   updateHandle: null,
   isChecking: false,
   isDownloading: false,
+  downloadProgress: null,
   error: null,
   isDismissed: false,
   isDevMode: false,
@@ -50,13 +51,14 @@ function setUpdateAvailable(version: string) {
   }
 }
 
-describe('Home update toast', () => {
+describe('home update toast', () => {
   beforeEach(() => {
     updateState.hasUpdate = false
     updateState.updateInfo = null
     updateState.updateHandle = null
     updateState.isChecking = false
     updateState.isDownloading = false
+    updateState.downloadProgress = null
     updateState.error = null
     updateState.isDismissed = false
     updateState.isDevMode = false

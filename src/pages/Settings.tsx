@@ -115,7 +115,7 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
   const updateSectionRef = useRef<HTMLDivElement>(null)
 
   // Update state
-  const { hasUpdate, updateInfo, isChecking, isDownloading, checkUpdate, dismissUpdate, downloadAndInstall, retryDownload, error, isDevMode } = useUpdate()
+  const { hasUpdate, updateInfo, isChecking, isDownloading, downloadProgress, checkUpdate, dismissUpdate, downloadAndInstall, retryDownload, error, isDevMode } = useUpdate()
 
   // Get app version
   useEffect(() => {
@@ -560,7 +560,29 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
                     <p className="text-sm text-muted-foreground">当前已是最新版本</p>
                   )}
                   {!isDevMode && isDownloading && (
-                    <p className="text-sm text-primary">正在下载更新...</p>
+                    <div className="max-w-sm space-y-1.5">
+                      <p className="text-sm text-primary tabular-nums">
+                        正在下载更新...
+                        {downloadProgress !== null && ` ${downloadProgress}%`}
+                      </p>
+                      <div
+                        role="progressbar"
+                        aria-label="更新下载进度"
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={downloadProgress ?? undefined}
+                        className="h-1.5 w-full overflow-hidden rounded-full bg-muted"
+                      >
+                        <div
+                          className={
+                            downloadProgress === null
+                              ? 'h-full w-1/3 animate-pulse rounded-full bg-primary'
+                              : 'h-full rounded-full bg-primary transition-[width] duration-300'
+                          }
+                          style={downloadProgress === null ? undefined : { width: `${downloadProgress}%` }}
+                        />
+                      </div>
+                    </div>
                   )}
                 </div>
                 <div className="flex gap-2">
@@ -596,7 +618,7 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
                         ? (
                             <>
                               <RefreshCw className="h-4 w-4 mr-1 animate-spin" />
-                              下载中
+                              {downloadProgress !== null ? `下载中 ${downloadProgress}%` : '下载中'}
                             </>
                           )
                         : hasUpdate && error

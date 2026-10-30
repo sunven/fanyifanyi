@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import type { UpdateHandle, UpdateInfo } from '../lib/updater'
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { createDownloadProgressTracker } from '@/lib/download-progress'
 import { logger } from '@/lib/logger'
 import { checkForUpdate, getCurrentVersion, relaunchApp } from '../lib/updater'
 
@@ -15,6 +16,8 @@ export interface UpdateContextValue {
   updateHandle: UpdateHandle | null
   isChecking: boolean
   isDownloading: boolean
+  /** Download progress 0-100, or null while the total size is unknown. */
+  downloadProgress: number | null
   error: string | null
   isDismissed: boolean
   isDevMode: boolean
@@ -45,6 +48,7 @@ export function UpdateProvider({
   const [updateHandle, setUpdateHandle] = useState<UpdateHandle | null>(null)
   const [isChecking, setIsChecking] = useState(false)
   const [isDownloading, setIsDownloading] = useState(false)
+  const [downloadProgress, setDownloadProgress] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isDismissed, setIsDismissed] = useState(false)
   const isDevMode = import.meta.env.DEV
@@ -52,6 +56,7 @@ export function UpdateProvider({
   const checkUpdate = useCallback(async (): Promise<boolean> => {
     setIsChecking(true)
     setError(null)
+    setDownloadProgress(null)
 
     // In dev mode, show a message and return
     if (isDevMode) {
@@ -102,6 +107,7 @@ export function UpdateProvider({
     setHasUpdate(false)
     setUpdateInfo(null)
     setUpdateHandle(null)
+    setDownloadProgress(null)
     setIsDismissed(true)
   }, [updateInfo])
 
@@ -120,8 +126,13 @@ export function UpdateProvider({
     }
 
     setIsDownloading(true)
+    setDownloadProgress(null)
     try {
-      await updateHandle.downloadAndInstall()
+      const tracker = createDownloadProgressTracker()
+
+      await updateHandle.downloadAndInstall((event) => {
+        setDownloadProgress(tracker.handle(event))
+      })
       await relaunchApp()
     }
     catch (err) {
@@ -143,6 +154,7 @@ export function UpdateProvider({
         }
       }
       setError(message)
+      setDownloadProgress(null)
     }
     finally {
       setIsDownloading(false)
@@ -172,6 +184,7 @@ export function UpdateProvider({
       updateHandle,
       isChecking,
       isDownloading,
+      downloadProgress,
       error,
       isDismissed,
       isDevMode,
@@ -188,6 +201,7 @@ export function UpdateProvider({
       updateHandle,
       isChecking,
       isDownloading,
+      downloadProgress,
       error,
       isDismissed,
       isDevMode,
