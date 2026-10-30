@@ -2,6 +2,7 @@ import ClipboardTranslation from './components/ClipboardTranslation'
 import ScreenshotSelection from './components/ScreenshotSelection'
 import TranslationOverlay from './components/TranslationOverlay'
 import { UpdateProvider } from './contexts/UpdateContext'
+import { useExternalLinkHandler } from './lib/external-link'
 import Home from './pages/Home'
 
 function windowMode() {
@@ -9,6 +10,7 @@ function windowMode() {
 }
 
 function App() {
+  useExternalLinkHandler()
   const mode = windowMode()
 
   if (mode === 'clipboard-translation') {

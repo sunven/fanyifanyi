@@ -663,6 +663,52 @@ async fn translate_with_microsoft(
     translator.bing(&text, &target_language).await
 }
 
+fn external_url(raw: &str) -> Result<reqwest::Url, String> {
+    let url = reqwest::Url::parse(raw).map_err(|error| format!("无效的链接: {}", error))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err("仅支持打开 http/https 链接".to_string());
+    }
+    Ok(url)
+}
+
+fn external_url_command(url: &str) -> Result<Command, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let mut command = Command::new("open");
+        command.arg(url);
+        Ok(command)
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let mut command = Command::new("rundll32");
+        command.args(["url.dll,FileProtocolHandler", url]);
+        Ok(command)
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let mut command = Command::new("xdg-open");
+        command.arg(url);
+        Ok(command)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    {
+        let _ = url;
+        Err("当前平台不支持打开外部链接".to_string())
+    }
+}
+
+#[tauri::command]
+fn open_external_url(url: String) -> Result<(), String> {
+    let url = external_url(&url)?;
+    let mut child = external_url_command(url.as_str())?
+        .spawn()
+        .map_err(|error| format!("打开链接失败: {}", error))?;
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -714,6 +760,7 @@ pub fn run() {
             translate_with_ai,
             translate_with_google,
             translate_with_microsoft,
+            open_external_url,
             test_ai_config,
             secure_storage_get,
             secure_storage_set,
@@ -745,7 +792,7 @@ mod tests {
     use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
     use super::{
-        is_screenshot_temp_path, logical_work_area, normalize_openai_base_url,
+        external_url, is_screenshot_temp_path, logical_work_area, normalize_openai_base_url,
         recognize_screenshot_text, screenshot_temp_path, stored_model_api_key, vision_roi,
         youdao_dictionary_request, CapturedScreenshot, ScreenRegion, ScreenshotStore,
     };
@@ -849,6 +896,15 @@ mod tests {
             normalize_openai_base_url("https://token.sensenova.cn/v1/chat/completions/"),
             "https://token.sensenova.cn/v1"
         );
+    }
+
+    #[test]
+    fn only_allows_http_and_https_external_urls() {
+        assert!(external_url("https://github.com/sunven/fanyifanyi").is_ok());
+        assert!(external_url("http://example.com/path").is_ok());
+        assert!(external_url("file:///etc/passwd").is_err());
+        assert!(external_url("javascript:alert(1)").is_err());
+        assert!(external_url("not a url").is_err());
     }
 
     #[test]
