@@ -13,6 +13,10 @@ vi.mock('@/lib/ai', () => ({
   testAIConfig,
 }))
 
+vi.mock('@/lib/updater', () => ({
+  getCurrentVersion: () => new Promise<string>(() => {}),
+}))
+
 vi.mock('@/contexts/UpdateContext', () => {
   const getMockUpdateContext = () => ({
     hasUpdate: false,

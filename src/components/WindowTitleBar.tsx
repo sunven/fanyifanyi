@@ -1,6 +1,7 @@
 import type { MouseEvent, ReactNode } from 'react'
 import { isTauri } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
+import { isMacPlatform } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 
 interface WindowTitleBarProps {
@@ -13,10 +14,6 @@ interface WindowTitleBarProps {
 
 interface NonMacOnlyProps {
   children: ReactNode
-}
-
-function isMacPlatform() {
-  return navigator.platform.toLowerCase().includes('mac')
 }
 
 export function WindowTitleBar({ children, title, center, className, controlsPosition = 'left' }: WindowTitleBarProps) {

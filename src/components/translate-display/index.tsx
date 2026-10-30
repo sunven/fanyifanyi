@@ -1,10 +1,14 @@
 import { StopCircle } from 'lucide-react'
-import { useEffect, useRef } from 'react'
-import { Streamdown } from 'streamdown'
+import { lazy, Suspense, useEffect, useRef } from 'react'
 import CopyTextButton from '@/components/CopyText'
 import TranslationRetry from '@/components/TranslationRetry'
 import { translationEngineLabel, TranslationError } from '@/lib/translate'
 import { useTextTranslation } from '@/lib/use-text-translation'
+
+const Streamdown = lazy(async () => {
+  const streamdown = await import('streamdown')
+  return { default: streamdown.Streamdown }
+})
 
 interface TranslateDisplayProps {
   q: string
@@ -32,6 +36,11 @@ export default function TranslateDisplay({ q, startDelay = 1000, clipboardSessio
       contentRef.current?.focus({ preventScroll: true })
   }, [q, startDelay, clipboardSessionId])
 
+  useEffect(() => {
+    if (isLoading)
+      void import('streamdown')
+  }, [isLoading])
+
   const errorMessage = error instanceof TranslationError ? `${translationEngineLabel(error.engine)}：${error.message}` : error?.message ?? ''
   const translatedText = result?.text ?? ''
 
@@ -56,7 +65,7 @@ export default function TranslateDisplay({ q, startDelay = 1000, clipboardSessio
           )}
         </div>
       </div>
-      {historySaveFailed && <p role="status" className="text-xs text-amber-700">译文已完成，但未能保存到本地历史。</p>}
+      {historySaveFailed ? <p role="status" className="text-xs text-amber-700">译文已完成，但未能保存到本地历史。</p> : null}
       <div
         ref={contentRef}
         role={clipboardSessionId === undefined ? undefined : 'region'}
@@ -89,12 +98,14 @@ export default function TranslateDisplay({ q, startDelay = 1000, clipboardSessio
           : null}
         {translatedText
           ? (
-              <Streamdown
-                isAnimating={isLoading}
-                controls={true}
-              >
-                {translatedText}
-              </Streamdown>
+              <Suspense fallback={<p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{translatedText}</p>}>
+                <Streamdown
+                  isAnimating={isLoading}
+                  controls={true}
+                >
+                  {translatedText}
+                </Streamdown>
+              </Suspense>
             )
           : null}
       </div>

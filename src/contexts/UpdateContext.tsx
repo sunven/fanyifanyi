@@ -3,9 +3,28 @@ import type { UpdateHandle, UpdateInfo } from '../lib/updater'
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { createDownloadProgressTracker } from '@/lib/download-progress'
 import { logger } from '@/lib/logger'
-import { checkForUpdate, getCurrentVersion, relaunchApp } from '../lib/updater'
+import { checkForUpdate, relaunchApp } from '../lib/updater'
 
 const DISMISSED_VERSION_KEY = 'updater_dismissed_version'
+
+function readDismissedVersion(): string | null {
+  const raw = localStorage.getItem(DISMISSED_VERSION_KEY)
+  if (!raw) {
+    return null
+  }
+  try {
+    const parsed = JSON.parse(raw) as { v?: number, version?: string }
+    return parsed.v === 1 && typeof parsed.version === 'string' ? parsed.version : null
+  }
+  catch {
+    // Legacy entries stored the bare version string.
+    return raw
+  }
+}
+
+function writeDismissedVersion(version: string) {
+  localStorage.setItem(DISMISSED_VERSION_KEY, JSON.stringify({ v: 1, version }))
+}
 
 /**
  * Update context value interface
@@ -70,7 +89,7 @@ export function UpdateProvider({
       const result = await checkForUpdate()
 
       // Check if dismissed
-      const dismissedVersion = localStorage.getItem(DISMISSED_VERSION_KEY)
+      const dismissedVersion = readDismissedVersion()
       if (result.available && result.update) {
         if (dismissedVersion === result.update.version) {
           setIsDismissed(true)
@@ -102,7 +121,7 @@ export function UpdateProvider({
 
   const dismissUpdate = useCallback(() => {
     if (updateInfo) {
-      localStorage.setItem(DISMISSED_VERSION_KEY, updateInfo.version)
+      writeDismissedVersion(updateInfo.version)
     }
     setHasUpdate(false)
     setUpdateInfo(null)
@@ -231,5 +250,3 @@ export function useUpdate() {
   }
   return context
 }
-
-export { getCurrentVersion }

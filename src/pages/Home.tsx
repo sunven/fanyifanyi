@@ -1,7 +1,7 @@
 import { isTauri } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { History as HistoryIcon, ScanText, Settings as SettingsIcon, X } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import CopyTextButton from '@/components/CopyText'
 import DictionaryDisplay from '@/components/dictionary-display'
 import TranslateDisplay from '@/components/translate-display'
@@ -11,10 +11,12 @@ import { Textarea } from '@/components/ui/textarea'
 import { UpdateToast } from '@/components/update-toast'
 import { NonMacOnly, TitleBarSpacer, WindowTitleBar } from '@/components/WindowTitleBar'
 import { useUpdate } from '@/contexts/UpdateContext'
+import { isMacPlatform } from '@/lib/platform'
 import { bindAppWindowClose, startScreenshotTranslation } from '@/lib/screenshot-translation'
 import { bindScreenshotShortcut } from '@/lib/shortcuts'
-import History from './History'
-import Settings from './Settings'
+
+const Settings = lazy(() => import('./Settings'))
+const History = lazy(() => import('./History'))
 
 function ModeSwitch() {
   return (
@@ -26,16 +28,19 @@ function ModeSwitch() {
 }
 
 export default function TranslationApp() {
-  const isMac = navigator.platform.toLowerCase().includes('mac')
+  const isMac = isMacPlatform()
   const [sourceText, setSourceText] = useState('')
   const [showSettings, setShowSettings] = useState(false)
   const [showHistory, setShowHistory] = useState(false)
   const [historyWarning, setHistoryWarning] = useState('')
   const [settingsInitialSection, setSettingsInitialSection] = useState<'updates' | undefined>()
-  const [toastVersion, setToastVersion] = useState<string | null>(null)
   const [lastPromptedVersion, setLastPromptedVersion] = useState<string | null>(null)
   const [screenshotError, setScreenshotError] = useState('')
   const { hasUpdate, updateInfo } = useUpdate()
+  const updateVersion = updateInfo?.version ?? null
+  const toastVersion = hasUpdate && updateVersion !== null && updateVersion !== lastPromptedVersion
+    ? updateVersion
+    : null
 
   const handleScreenshotTranslation = useCallback(async () => {
     setScreenshotError('')
@@ -86,23 +91,14 @@ export default function TranslationApp() {
     }
   }, [])
 
-  useEffect(() => {
-    const version = updateInfo?.version
-    if (!hasUpdate || !version) {
-      setToastVersion(null)
-      return
+  const markUpdatePrompted = () => {
+    if (toastVersion) {
+      setLastPromptedVersion(toastVersion)
     }
-
-    if (version === lastPromptedVersion) {
-      return
-    }
-
-    setToastVersion(version)
-    setLastPromptedVersion(version)
-  }, [hasUpdate, lastPromptedVersion, updateInfo?.version])
+  }
 
   const handleViewUpdate = () => {
-    setToastVersion(null)
+    markUpdatePrompted()
     setSettingsInitialSection('updates')
     setShowSettings(true)
   }
@@ -152,18 +148,22 @@ export default function TranslationApp() {
             </Button>
           </WindowTitleBar>
           <TitleBarSpacer />
-          {isMac && <div className="px-4 pt-3 sm:hidden"><ModeSwitch /></div>}
-          {screenshotError && (
-            <div role="alert" className="mx-4 mt-3 rounded-md border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              {screenshotError}
-            </div>
-          )}
-          {historyWarning && (
-            <div role="status" className="mx-4 mt-3 flex items-center gap-2 text-sm text-amber-700">
-              {historyWarning}
-              <Button variant="ghost" size="sm" onClick={() => setHistoryWarning('')} aria-label="关闭历史保存提示"><X className="h-4 w-4" /></Button>
-            </div>
-          )}
+          {isMac ? <div className="px-4 pt-3 sm:hidden"><ModeSwitch /></div> : null}
+          {screenshotError
+            ? (
+                <div role="alert" className="mx-4 mt-3 rounded-md border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  {screenshotError}
+                </div>
+              )
+            : null}
+          {historyWarning
+            ? (
+                <div role="status" className="mx-4 mt-3 flex items-center gap-2 text-sm text-amber-700">
+                  {historyWarning}
+                  <Button variant="ghost" size="sm" onClick={() => setHistoryWarning('')} aria-label="关闭历史保存提示"><X className="h-4 w-4" /></Button>
+                </div>
+              )
+            : null}
           <NonMacOnly>
             <div className="flex items-center justify-between px-4 pt-3">
               <ModeSwitch />
@@ -198,40 +198,54 @@ export default function TranslationApp() {
                   autoComplete="off"
                   {...{ writingsuggestions: 'false' }}
                 />
-                {sourceText && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    aria-label="清空源文本"
-                    className="absolute top-2 right-2 h-6 w-6 border bg-background/80 p-0 backdrop-blur-sm"
-                    onClick={() => { setSourceText('') }}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                )}
+                {sourceText
+                  ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        aria-label="清空源文本"
+                        className="absolute top-2 right-2 h-6 w-6 border bg-background/80 p-0 backdrop-blur-sm"
+                        onClick={() => { setSourceText('') }}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )
+                  : null}
               </div>
             </section>
             <section className="flex min-h-0 flex-col overflow-hidden rounded-lg bg-card shadow-[0_1px_0_oklch(0.35_0.02_55/0.05),0_18px_36px_-28px_oklch(0.32_0.04_40/0.55)]">
-              <TabsContent value="translate" className="min-h-0 flex-1 overflow-hidden">
+              <TabsContent value="translate" forceMount className="min-h-0 flex-1 overflow-hidden data-[state=inactive]:hidden">
                 <TranslateDisplay q={sourceText} />
               </TabsContent>
-              <TabsContent value="dict" className="min-h-0 flex-1 overflow-hidden"><DictionaryDisplay q={sourceText} /></TabsContent>
+              <TabsContent value="dict" forceMount className="min-h-0 flex-1 overflow-hidden data-[state=inactive]:hidden"><DictionaryDisplay q={sourceText} /></TabsContent>
             </section>
           </div>
         </Tabs>
-        {toastVersion && (
-          <UpdateToast
-            version={toastVersion}
-            onViewUpdate={handleViewUpdate}
-            onDismiss={() => setToastVersion(null)}
-          />
-        )}
+        {toastVersion
+          ? (
+              <UpdateToast
+                version={toastVersion}
+                onViewUpdate={handleViewUpdate}
+                onDismiss={markUpdatePrompted}
+              />
+            )
+          : null}
       </div>
-      {showSettings && (
-        <Settings onBack={handleCloseSettings} initialSection={settingsInitialSection} />
-      )}
-      {showHistory && <History onBack={() => setShowHistory(false)} />}
+      {showSettings
+        ? (
+            <Suspense fallback={null}>
+              <Settings onBack={handleCloseSettings} initialSection={settingsInitialSection} />
+            </Suspense>
+          )
+        : null}
+      {showHistory
+        ? (
+            <Suspense fallback={null}>
+              <History onBack={() => setShowHistory(false)} />
+            </Suspense>
+          )
+        : null}
     </>
   )
 }

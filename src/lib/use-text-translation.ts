@@ -36,13 +36,10 @@ export function useTextTranslation(
       if (signal.aborted || !translated)
         return
       setResult(translated)
-      try {
-        await recordTranslation(text, 'desk', translated, clipboardSessionId)
-      }
-      catch {
+      void recordTranslation(text, 'desk', translated, clipboardSessionId).catch(() => {
         if (!signal.aborted)
           setHistorySaveFailed(true)
-      }
+      })
     }
     catch (err) {
       if (signal.aborted)

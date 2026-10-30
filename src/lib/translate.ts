@@ -36,22 +36,10 @@ function cancelledTranslation() {
   return new DOMException('翻译已取消', 'AbortError')
 }
 
+const CJK_CHARACTER = /[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\u{20000}-\u{2A6DF}\u{2A700}-\u{2B73F}\u{2B740}-\u{2B81F}\u{2B820}-\u{2CEAF}]/u
+
 function containsCjk(text: string) {
-  for (const char of text) {
-    const code = char.codePointAt(0) ?? 0
-    if (
-      (code >= 0x3400 && code <= 0x4DBF)
-      || (code >= 0x4E00 && code <= 0x9FFF)
-      || (code >= 0xF900 && code <= 0xFAFF)
-      || (code >= 0x20000 && code <= 0x2A6DF)
-      || (code >= 0x2A700 && code <= 0x2B73F)
-      || (code >= 0x2B740 && code <= 0x2B81F)
-      || (code >= 0x2B820 && code <= 0x2CEAF)
-    ) {
-      return true
-    }
-  }
-  return false
+  return CJK_CHARACTER.test(text)
 }
 
 function deskTargetLanguage(text: string) {

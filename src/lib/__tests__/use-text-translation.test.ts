@@ -177,7 +177,7 @@ describe('text translation lifecycle', () => {
     ])
   })
 
-  it('exposes the translation while history is pending and finishes after the write', async () => {
+  it('exposes the translation without waiting for the history write', async () => {
     let save: () => void = () => {}
     invoke.mockImplementation(command => command === 'history_record'
       ? new Promise<void>((resolve) => { save = resolve })
@@ -185,7 +185,7 @@ describe('text translation lifecycle', () => {
     const { result } = renderHook(() => useTextTranslation('hello'))
     await advanceTime()
 
-    expect(result.current).toMatchObject({ result: { text: '你好' }, isLoading: true, historySaveFailed: false })
+    expect(result.current).toMatchObject({ result: { text: '你好' }, isLoading: false, historySaveFailed: false })
     expect(emitTo).not.toHaveBeenCalled()
     await act(async () => save())
 

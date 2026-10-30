@@ -45,7 +45,7 @@ export default function TranslationRetry({ onRetry, disabled }: TranslationRetry
       <Button size="sm" onClick={() => onRetry(targets[Number(selected)]?.target)} disabled={disabled || selected === ''}>
         使用此引擎重试
       </Button>
-      {error && <p className="w-full text-xs">{error}</p>}
+      {error ? <p className="w-full text-xs">{error}</p> : null}
     </div>
   )
 }

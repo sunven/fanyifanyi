@@ -5,6 +5,7 @@ import Settings from '../Settings'
 vi.mock('@/components/HistorySettings', () => ({ default: () => null }))
 vi.mock('@/components/ShortcutSettings', () => ({ default: () => null }))
 vi.mock('@/lib/ai', () => ({ testAIConfig: vi.fn() }))
+vi.mock('@/lib/updater', () => ({ getCurrentVersion: () => new Promise<string>(() => {}) }))
 
 const updateState = {
   hasUpdate: true,

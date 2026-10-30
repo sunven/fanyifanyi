@@ -27,7 +27,7 @@ import {
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { NonMacOnly, TitleBarSpacer, WindowTitleBar } from '@/components/WindowTitleBar'
-import { getCurrentVersion, useUpdate } from '@/contexts/UpdateContext'
+import { useUpdate } from '@/contexts/UpdateContext'
 import { testAIConfig } from '@/lib/ai'
 import {
   addAIConfig,
@@ -39,6 +39,7 @@ import {
   setTranslationProvider,
   updateAIConfig,
 } from '@/lib/config'
+import { getCurrentVersion } from '@/lib/updater'
 
 interface SettingsProps {
   onBack?: () => void
@@ -52,6 +53,18 @@ interface ModelTestResult {
 
 const NEW_MODEL_TEST_ID = 'new-model-draft'
 const CONNECTION_ERROR_MESSAGE = '连接失败：无法访问 API Base URL。请检查地址、网络、代理设置，或服务商是否允许当前环境访问。'
+const DEFAULT_NEW_MODEL: Omit<AIConfig, 'id'> = {
+  name: '',
+  baseURL: 'https://api.openai.com/v1',
+  apiKey: '',
+  model: 'gpt-4o-mini',
+}
+const EMPTY_MODEL_DRAFT: Omit<AIConfig, 'id'> = {
+  name: '',
+  baseURL: '',
+  apiKey: '',
+  model: '',
+}
 
 function getEditModelTestId(id: string) {
   return `edit:${id}`
@@ -106,8 +119,6 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
   const [showResetConfirm, setShowResetConfirm] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [showSaveAlert, setShowSaveAlert] = useState(false)
-  const [showNewApiKey, setShowNewApiKey] = useState(false)
-  const [showEditApiKey, setShowEditApiKey] = useState(false)
   const [testingModelId, setTestingModelId] = useState<string | null>(null)
   const [modelTestResults, setModelTestResults] = useState<Record<string, ModelTestResult>>({})
   const [appVersion, setAppVersion] = useState<string>('加载中...')
@@ -155,28 +166,25 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
     }
   }, [initialSection])
 
-  // New model form state
-  const [newModel, setNewModel] = useState<Omit<AIConfig, 'id'>>({
-    name: '',
-    baseURL: 'https://api.openai.com/v1',
-    apiKey: '',
-    model: 'gpt-4o-mini',
-  })
-  const [editDraft, setEditDraft] = useState<Omit<AIConfig, 'id'>>({
-    name: '',
-    baseURL: '',
-    apiKey: '',
-    model: '',
-  })
+  const editingModel = editingId ? configs.models.find(model => model.id === editingId) : undefined
+  const editDraft: Omit<AIConfig, 'id'> = editingModel
+    ? { name: editingModel.name, baseURL: editingModel.baseURL, apiKey: editingModel.apiKey, model: editingModel.model }
+    : EMPTY_MODEL_DRAFT
 
   // Set active model
   const handleSetActive = async (id: string) => {
-    await setActiveModel(id)
-    setConfigs(current => (
-      current.models.some(model => model.id === id)
-        ? { ...current, activeModelId: id }
-        : current
-    ))
+    try {
+      await setActiveModel(id)
+      setConfigs(current => (
+        current.models.some(model => model.id === id)
+          ? { ...current, activeModelId: id }
+          : current
+      ))
+    }
+    catch {
+      setSaveError('切换到该模型失败，请重试')
+      setShowSaveAlert(true)
+    }
   }
 
   const handleTranslationProviderChange = async (provider: TranslationProvider) => {
@@ -202,13 +210,6 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
   }
 
   const handleEdit = (model: AIConfig) => {
-    setShowEditApiKey(false)
-    setEditDraft({
-      name: model.name,
-      baseURL: model.baseURL,
-      apiKey: model.apiKey,
-      model: model.model,
-    })
     clearModelTestResult(getEditModelTestId(model.id))
     setEditingId(model.id)
   }
@@ -217,28 +218,27 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
     if (open) {
       return
     }
-    setShowEditApiKey(false)
     if (editingId) {
       clearModelTestResult(getEditModelTestId(editingId))
     }
     setEditingId(null)
   }
 
-  const handleSaveEdit = async () => {
+  const handleSaveEdit = async (draft: Omit<AIConfig, 'id'>) => {
     if (!editingId) {
       return
     }
-    if (!editDraft.name || !editDraft.baseURL || !editDraft.model) {
+    if (!draft.name || !draft.baseURL || !draft.model) {
       setSaveError('请填写所有必填字段')
       setShowSaveAlert(true)
       return
     }
     try {
-      await updateAIConfig(editingId, editDraft)
+      await updateAIConfig(editingId, draft)
       setConfigs(current => ({
         ...current,
         models: current.models.map(model => (
-          model.id === editingId ? { ...model, ...editDraft } : model
+          model.id === editingId ? { ...model, ...draft } : model
         )),
       }))
       handleEditDialogOpenChange(false)
@@ -250,30 +250,23 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
   }
 
   // Add new model
-  const handleAddModel = async () => {
+  const handleAddModel = async (draft: Omit<AIConfig, 'id'>) => {
     try {
-      if (!newModel.name || !newModel.baseURL || !newModel.model) {
+      if (!draft.name || !draft.baseURL || !draft.model) {
         setSaveError('请填写所有必填字段')
         setShowSaveAlert(true)
         return
       }
-      const created = await addAIConfig(newModel)
+      const created = await addAIConfig(draft)
       setConfigs(current => ({
         ...current,
         models: [...current.models, created],
       }))
       setShowAddDialog(false)
-      setShowNewApiKey(false)
       setModelTestResults((prev) => {
         const next = { ...prev }
         delete next[NEW_MODEL_TEST_ID]
         return next
-      })
-      setNewModel({
-        name: '',
-        baseURL: 'https://api.openai.com/v1',
-        apiKey: '',
-        model: 'gpt-4o-mini',
       })
     }
     catch {
@@ -285,7 +278,6 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
   const handleAddDialogOpenChange = (open: boolean) => {
     setShowAddDialog(open)
     if (!open) {
-      setShowNewApiKey(false)
       setModelTestResults((prev) => {
         const next = { ...prev }
         delete next[NEW_MODEL_TEST_ID]
@@ -334,20 +326,20 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
     }
   }
 
-  const handleTestNewModel = () => {
+  const handleTestNewModel = (draft: Omit<AIConfig, 'id'>) => {
     void handleTestModel({
       id: NEW_MODEL_TEST_ID,
-      ...newModel,
+      ...draft,
     })
   }
 
-  const handleTestEdit = () => {
+  const handleTestEdit = (draft: Omit<AIConfig, 'id'>) => {
     if (!editingId) {
       return
     }
     void handleTestModel({
       id: getEditModelTestId(editingId),
-      ...editDraft,
+      ...draft,
     })
   }
 
@@ -375,9 +367,15 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
 
   // Confirm reset
   const confirmReset = async () => {
-    const defaultConfigs = await resetAIConfig()
-    setConfigs(defaultConfigs)
-    setShowResetConfirm(false)
+    try {
+      const defaultConfigs = await resetAIConfig()
+      setConfigs(defaultConfigs)
+      setShowResetConfirm(false)
+    }
+    catch {
+      setSaveError('重置配置失败，请重试')
+      setShowSaveAlert(true)
+    }
   }
 
   // Handle check for updates
@@ -471,10 +469,7 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
               </Button>
               <Button
                 size="sm"
-                onClick={() => {
-                  setShowNewApiKey(false)
-                  setShowAddDialog(true)
-                }}
+                onClick={() => setShowAddDialog(true)}
               >
                 添加模型
               </Button>
@@ -546,9 +541,9 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
                   {isDevMode && (
                     <p className="text-sm text-amber-600 dark:text-amber-400">开发模式 - 更新功能仅在生产版本可用</p>
                   )}
-                  {!isDevMode && error && (
-                    <p className="text-sm text-red-600 dark:text-red-400 mb-2">{error}</p>
-                  )}
+                  {!isDevMode && error
+                    ? <p className="text-sm text-red-600 dark:text-red-400 mb-2">{error}</p>
+                    : null}
                   {!isDevMode && !error && hasUpdate && (
                     <p className="text-sm text-green-600 dark:text-green-400 mb-2">
                       发现新版本
@@ -644,41 +639,43 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
                               )}
                   </Button>
                   {/* Re-check button (when there's an error) */}
-                  {!isChecking && !isDownloading && error && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={handleCheckUpdates}
-                    >
-                      <RefreshCw className="h-4 w-4 mr-1" />
-                      重新检查
-                    </Button>
-                  )}
+                  {!isChecking && !isDownloading && error
+                    ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={handleCheckUpdates}
+                        >
+                          <RefreshCw className="h-4 w-4 mr-1" />
+                          重新检查
+                        </Button>
+                      )
+                    : null}
                 </div>
               </div>
 
               {/* Update notes - show when hasUpdate, even if there's an error */}
-              {hasUpdate && updateInfo?.body && (
-                <div className="p-4 bg-muted/50 rounded-md">
-                  <p className="text-sm font-medium mb-2">更新说明</p>
-                  <div className="text-sm text-muted-foreground prose prose-sm dark:prose-invert max-w-none">
-                    <Markdown>{updateInfo.body}</Markdown>
-                  </div>
-                </div>
-              )}
+              {hasUpdate && updateInfo?.body
+                ? (
+                    <div className="p-4 bg-muted/50 rounded-md">
+                      <p className="text-sm font-medium mb-2">更新说明</p>
+                      <div className="text-sm text-muted-foreground prose prose-sm dark:prose-invert max-w-none">
+                        <Markdown>{updateInfo.body}</Markdown>
+                      </div>
+                    </div>
+                  )
+                : null}
             </div>
           </div>
         </div>
       </div>
 
       <ModelFormDialog
+        key={showAddDialog ? 'add-open' : 'add-closed'}
         open={showAddDialog}
         title="添加新模型"
         submitLabel="添加"
-        draft={newModel}
-        onDraftChange={setNewModel}
-        showApiKey={showNewApiKey}
-        onToggleApiKey={() => setShowNewApiKey(prev => !prev)}
+        initialDraft={DEFAULT_NEW_MODEL}
         testResult={modelTestResults[NEW_MODEL_TEST_ID]}
         isTesting={testingModelId === NEW_MODEL_TEST_ID}
         isTestDisabled={testingModelId !== null}
@@ -688,13 +685,11 @@ export default function Settings({ onBack, initialSection }: SettingsProps) {
       />
 
       <ModelFormDialog
+        key={editingId ?? 'edit-closed'}
         open={editingId !== null}
         title="编辑模型"
         submitLabel="保存"
-        draft={editDraft}
-        onDraftChange={setEditDraft}
-        showApiKey={showEditApiKey}
-        onToggleApiKey={() => setShowEditApiKey(prev => !prev)}
+        initialDraft={editDraft}
         testResult={editingId ? modelTestResults[getEditModelTestId(editingId)] : undefined}
         isTesting={editingId !== null && testingModelId === getEditModelTestId(editingId)}
         isTestDisabled={testingModelId !== null}
@@ -763,10 +758,7 @@ function ModelFormDialog({
   open,
   title,
   submitLabel,
-  draft,
-  onDraftChange,
-  showApiKey,
-  onToggleApiKey,
+  initialDraft,
   testResult,
   isTesting,
   isTestDisabled,
@@ -777,17 +769,17 @@ function ModelFormDialog({
   open: boolean
   title: string
   submitLabel: string
-  draft: Omit<AIConfig, 'id'>
-  onDraftChange: (draft: Omit<AIConfig, 'id'>) => void
-  showApiKey: boolean
-  onToggleApiKey: () => void
+  initialDraft: Omit<AIConfig, 'id'>
   testResult?: ModelTestResult
   isTesting: boolean
   isTestDisabled: boolean
   onOpenChange: (open: boolean) => void
-  onTest: () => void
-  onSubmit: () => void
+  onTest: (draft: Omit<AIConfig, 'id'>) => void
+  onSubmit: (draft: Omit<AIConfig, 'id'>) => void
 }) {
+  const [draft, setDraft] = useState(initialDraft)
+  const [showApiKey, setShowApiKey] = useState(false)
+
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
@@ -804,7 +796,7 @@ function ModelFormDialog({
                     type="text"
                     placeholder="GPT-4o Mini"
                     value={draft.name}
-                    onChange={e => onDraftChange({ ...draft, name: e.target.value })}
+                    onChange={e => setDraft({ ...draft, name: e.target.value })}
                   />
                 </div>
                 <div className="space-y-2">
@@ -815,7 +807,7 @@ function ModelFormDialog({
                     type="text"
                     placeholder="gpt-4o-mini"
                     value={draft.model}
-                    onChange={e => onDraftChange({ ...draft, model: e.target.value })}
+                    onChange={e => setDraft({ ...draft, model: e.target.value })}
                   />
                 </div>
               </div>
@@ -827,7 +819,7 @@ function ModelFormDialog({
                   type="text"
                   placeholder="https://api.openai.com/v1"
                   value={draft.baseURL}
-                  onChange={e => onDraftChange({ ...draft, baseURL: e.target.value })}
+                  onChange={e => setDraft({ ...draft, baseURL: e.target.value })}
                 />
               </div>
               <div className="space-y-2">
@@ -840,7 +832,7 @@ function ModelFormDialog({
                     className="pr-10"
                     placeholder="sk-..."
                     value={draft.apiKey}
-                    onChange={e => onDraftChange({ ...draft, apiKey: e.target.value })}
+                    onChange={e => setDraft({ ...draft, apiKey: e.target.value })}
                   />
                   <Button
                     type="button"
@@ -849,7 +841,7 @@ function ModelFormDialog({
                     className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                     title={showApiKey ? '隐藏 API Key' : '显示 API Key'}
                     aria-label={showApiKey ? '隐藏 API Key' : '显示 API Key'}
-                    onClick={onToggleApiKey}
+                    onClick={() => setShowApiKey(prev => !prev)}
                   >
                     {showApiKey
                       ? <EyeOff className="h-4 w-4" />
@@ -865,7 +857,7 @@ function ModelFormDialog({
           <Button
             type="button"
             variant="outline"
-            onClick={onTest}
+            onClick={() => onTest(draft)}
             disabled={isTestDisabled}
           >
             {isTesting ? '测试中' : '测试'}
@@ -874,7 +866,7 @@ function ModelFormDialog({
           <AlertDialogAction
             onClick={(event) => {
               event.preventDefault()
-              onSubmit()
+              onSubmit(draft)
             }}
           >
             {submitLabel}

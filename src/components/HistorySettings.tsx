@@ -79,16 +79,16 @@ export default function HistorySettings() {
       >
         清空普通历史
       </Button>
-      {!snapshot && !error && <p className="text-xs text-muted-foreground">正在加载历史设置...</p>}
-      {error && !showClearConfirm && <p role="alert" className="text-sm text-destructive">{error}</p>}
-      {message && <p role="status" className="text-xs text-muted-foreground">{message}</p>}
+      {!snapshot && !error ? <p className="text-xs text-muted-foreground">正在加载历史设置...</p> : null}
+      {error && !showClearConfirm ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
+      {message ? <p role="status" className="text-xs text-muted-foreground">{message}</p> : null}
       <AlertDialog open={showClearConfirm} onOpenChange={setShowClearConfirm}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>清空普通历史？</AlertDialogTitle>
             <AlertDialogDescription>将删除所有未收藏的翻译记录，收藏会保留。此操作无法撤销。</AlertDialogDescription>
           </AlertDialogHeader>
-          {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+          {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={busy}>取消</AlertDialogCancel>
             <AlertDialogAction

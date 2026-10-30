@@ -1,9 +1,11 @@
-import ClipboardTranslation from './components/ClipboardTranslation'
-import ScreenshotSelection from './components/ScreenshotSelection'
-import TranslationOverlay from './components/TranslationOverlay'
+import { lazy, Suspense } from 'react'
 import { UpdateProvider } from './contexts/UpdateContext'
 import { useExternalLinkHandler } from './lib/external-link'
-import Home from './pages/Home'
+
+const Home = lazy(() => import('./pages/Home'))
+const ClipboardTranslation = lazy(() => import('./components/ClipboardTranslation'))
+const ScreenshotSelection = lazy(() => import('./components/ScreenshotSelection'))
+const TranslationOverlay = lazy(() => import('./components/TranslationOverlay'))
 
 function windowMode() {
   return new URLSearchParams(window.location.search).get('window')
@@ -14,20 +16,22 @@ function App() {
   const mode = windowMode()
 
   if (mode === 'clipboard-translation') {
-    return <ClipboardTranslation />
+    return <Suspense fallback={null}><ClipboardTranslation /></Suspense>
   }
 
   if (mode === 'screenshot-selection') {
-    return <ScreenshotSelection />
+    return <Suspense fallback={null}><ScreenshotSelection /></Suspense>
   }
 
   if (mode === 'translation-overlay') {
-    return <TranslationOverlay />
+    return <Suspense fallback={null}><TranslationOverlay /></Suspense>
   }
 
   return (
     <UpdateProvider checkOnMount={true}>
-      <Home />
+      <Suspense fallback={null}>
+        <Home />
+      </Suspense>
     </UpdateProvider>
   )
 }

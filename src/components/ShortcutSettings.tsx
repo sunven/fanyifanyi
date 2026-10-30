@@ -5,10 +5,11 @@ import { Keyboard } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { isMacPlatform } from '@/lib/platform'
 import { DEFAULT_CLIPBOARD_SHORTCUT, DEFAULT_SCREENSHOT_SHORTCUT, DEFAULT_SELECTION_SHORTCUT, loadClipboardShortcut, loadScreenshotShortcut, loadSelectionShortcut, saveClipboardShortcut, saveScreenshotShortcut, saveSelectionShortcut } from '@/lib/shortcuts'
 
 function displayShortcut(shortcut: string) {
-  if (navigator.platform.toLowerCase().includes('mac')) {
+  if (isMacPlatform()) {
     return shortcut.replace(/Ctrl/g, 'Control').replace(/Alt/g, 'Option').replace(/Super/g, 'Command')
   }
   return shortcut
@@ -157,9 +158,9 @@ export default function ShortcutSettings({ kind = 'screenshot' }: { kind?: 'scre
           )
         : settings
           ? <p className="text-sm text-muted-foreground">{isTauri() ? `当前平台暂不支持${kind !== 'screenshot' ? title : '全局截图快捷键'}。` : `${title}仅在桌面应用中可用。`}</p>
-          : !error && <p className="text-xs text-muted-foreground">正在加载快捷键设置...</p>}
-      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-      {message && <p role="status" className="text-xs text-muted-foreground">{message}</p>}
+          : !error ? <p className="text-xs text-muted-foreground">正在加载快捷键设置...</p> : null}
+      {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}
+      {message ? <p role="status" className="text-xs text-muted-foreground">{message}</p> : null}
     </section>
   )
 }

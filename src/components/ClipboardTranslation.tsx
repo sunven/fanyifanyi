@@ -108,27 +108,29 @@ export default function ClipboardTranslation() {
           <X className="size-4" />
         </Button>
       </header>
-      {error && <p role="alert" className="p-4 text-sm text-destructive">{error}</p>}
+      {error ? <p role="alert" className="p-4 text-sm text-destructive">{error}</p> : null}
       {session?.error
         ? (
             <div className="space-y-3 p-4">
               <p role="status" className="text-sm text-muted-foreground">{session.error}</p>
-              {session.permissionRequired && (
-                <Button variant="outline" onClick={() => void openAccessibilitySettings()}>打开辅助功能设置</Button>
-              )}
+              {session.permissionRequired
+                ? <Button variant="outline" onClick={() => void openAccessibilitySettings()}>打开辅助功能设置</Button>
+                : null}
             </div>
           )
-        : session && (
-          <div key={session.id} className="flex min-h-0 flex-1 flex-col">
-            <details className="shrink-0 border-b px-4 py-2 text-sm">
-              <summary className="cursor-pointer text-muted-foreground">查看原文</summary>
-              <p className="mt-2 max-h-28 overflow-auto whitespace-pre-wrap break-words">{session.sourceText}</p>
-            </details>
-            <div className="min-h-0 flex-1">
-              <TranslateDisplay q={session.sourceText} startDelay={0} clipboardSessionId={session.id} />
-            </div>
-          </div>
-        )}
+        : session
+          ? (
+              <div key={session.id} className="flex min-h-0 flex-1 flex-col">
+                <details className="shrink-0 border-b px-4 py-2 text-sm">
+                  <summary className="cursor-pointer text-muted-foreground">查看原文</summary>
+                  <p className="mt-2 max-h-28 overflow-auto whitespace-pre-wrap break-words">{session.sourceText}</p>
+                </details>
+                <div className="min-h-0 flex-1">
+                  <TranslateDisplay q={session.sourceText} startDelay={0} clipboardSessionId={session.id} />
+                </div>
+              </div>
+            )
+          : null}
       {!session && !error && <p role="status" className="p-4 text-sm text-muted-foreground">{closing.current ? '正在关闭…' : '正在读取文字…'}</p>}
     </main>
   )

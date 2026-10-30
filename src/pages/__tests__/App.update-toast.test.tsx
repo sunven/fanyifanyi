@@ -49,6 +49,9 @@ describe('App update toast', () => {
     render(<App />)
 
     await act(async () => {
+      await vi.dynamicImportSettled()
+    })
+    await act(async () => {
       await vi.advanceTimersByTimeAsync(1000)
     })
 

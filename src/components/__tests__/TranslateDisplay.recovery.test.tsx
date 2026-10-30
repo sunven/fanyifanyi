@@ -74,6 +74,9 @@ describe('desk translation recovery', () => {
     render(<TranslateDisplay q="hello" />)
     await finishDebounce()
     expect(screen.getByText('你好')).toBeInTheDocument()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
     expect(screen.getByRole('status')).toHaveTextContent('未能保存到本地历史')
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })

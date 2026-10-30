@@ -108,6 +108,9 @@ describe('home navigation', () => {
     expect(translate).toHaveBeenCalledTimes(1)
 
     fireEvent.click(screen.getByRole('button', { name: page }))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
     expect(screen.getByRole('heading', { name: page })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '返回' }))

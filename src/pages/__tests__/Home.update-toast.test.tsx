@@ -35,6 +35,9 @@ const updateState: UpdateContextValue = {
 
 vi.mock('@/contexts/UpdateContext', () => ({
   useUpdate: () => updateState,
+}))
+
+vi.mock('@/lib/updater', () => ({
   getCurrentVersion: () => Promise.resolve('0.1.30'),
 }))
 
@@ -94,7 +97,7 @@ describe('home update toast', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: '查看更新' }))
 
-    expect(screen.getByRole('heading', { name: '设置' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: '设置' })).toBeInTheDocument()
     expect(screen.getByText('软件更新')).toBeInTheDocument()
     await waitFor(() => expect(screen.getByText('0.1.30')).toBeInTheDocument())
     expect(updateState.downloadAndInstall).not.toHaveBeenCalled()

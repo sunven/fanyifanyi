@@ -181,60 +181,70 @@ export default function ScreenshotSelection() {
       className="fixed inset-0 cursor-crosshair overflow-hidden bg-black text-white"
       onMouseDown={event => startDrag(event, 'draw')}
     >
-      {frame.imageSrc && (
-        <img
-          src={frame.imageSrc}
-          alt=""
-          className="absolute inset-0 h-full w-full select-none object-fill"
-          draggable={false}
-        />
-      )}
-      <div className="absolute inset-0 bg-black/20" />
-      {!frame.imageSrc && !error && (
-        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded bg-black/75 px-3 py-2 text-sm">
-          准备截图...
-        </div>
-      )}
-      {selection && (
-        <div
-          role="region"
-          aria-label="截图选区"
-          onMouseDown={event => startDrag(event, 'move', selection)}
-          className="absolute cursor-move border border-white bg-white/15 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]"
-          style={{
-            left: selection.x,
-            top: selection.y,
-            width: selection.width,
-            height: selection.height,
-          }}
-        >
-          {selectedEnough && !isTranslating && resizeHandles.map(handle => (
-            <div
-              key={handle.edge}
-              title={`调整选区${handle.label}`}
-              className={`absolute ${handle.className}`}
-              onMouseDown={event => startDrag(event, handle.edge, selection)}
+      {frame.imageSrc
+        ? (
+            <img
+              src={frame.imageSrc}
+              alt=""
+              className="absolute inset-0 h-full w-full select-none object-fill"
+              draggable={false}
             />
-          ))}
-        </div>
-      )}
-      {selectedEnough && !isTranslating && (
-        <div
-          className="absolute flex gap-2 rounded bg-black/85 p-2 shadow-lg"
-          style={{
-            left: Math.max(8, Math.min(selection.x + selection.width - 124, frame.logicalWidth - 132)),
-            top: Math.max(8, Math.min(selection.y + selection.height + 8, frame.logicalHeight - 48)),
-          }}
-          onMouseDown={event => event.stopPropagation()}
-        >
-          <Button size="sm" onClick={() => void handleTranslate()} disabled={isTranslating}>
-            {isTranslating ? '翻译中...' : '翻译'}
-          </Button>
-          <Button size="icon" variant="ghost" onClick={() => void cancelSelection()} aria-label="取消截图翻译">
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-      )}
+          )
+        : null}
+      <div className="absolute inset-0 bg-black/20" />
+      {!frame.imageSrc && !error
+        ? (
+            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded bg-black/75 px-3 py-2 text-sm">
+              准备截图...
+            </div>
+          )
+        : null}
+      {selection
+        ? (
+            <div
+              role="region"
+              aria-label="截图选区"
+              onMouseDown={event => startDrag(event, 'move', selection)}
+              className="absolute cursor-move border border-white bg-white/15 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]"
+              style={{
+                left: selection.x,
+                top: selection.y,
+                width: selection.width,
+                height: selection.height,
+              }}
+            >
+              {selectedEnough && !isTranslating
+                ? resizeHandles.map(handle => (
+                    <div
+                      key={handle.edge}
+                      title={`调整选区${handle.label}`}
+                      className={`absolute ${handle.className}`}
+                      onMouseDown={event => startDrag(event, handle.edge, selection)}
+                    />
+                  ))
+                : null}
+            </div>
+          )
+        : null}
+      {selectedEnough && !isTranslating
+        ? (
+            <div
+              className="absolute flex gap-2 rounded bg-black/85 p-2 shadow-lg"
+              style={{
+                left: Math.max(8, Math.min(selection.x + selection.width - 124, frame.logicalWidth - 132)),
+                top: Math.max(8, Math.min(selection.y + selection.height + 8, frame.logicalHeight - 48)),
+              }}
+              onMouseDown={event => event.stopPropagation()}
+            >
+              <Button size="sm" onClick={() => void handleTranslate()} disabled={isTranslating}>
+                {isTranslating ? '翻译中...' : '翻译'}
+              </Button>
+              <Button size="icon" variant="ghost" onClick={() => void cancelSelection()} aria-label="取消截图翻译">
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          )
+        : null}
       {isTranslating && (
         <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/35">
           <div className="cursor-default space-y-2 rounded bg-black/85 px-3 py-2 text-sm shadow-lg">
@@ -253,15 +263,17 @@ export default function ScreenshotSelection() {
           </div>
         </div>
       )}
-      {error && (
-        <div
-          className="absolute left-1/2 top-1/2 z-30 max-h-[calc(100vh-96px)] w-[calc(100vw-32px)] max-w-xl -translate-x-1/2 -translate-y-1/2 cursor-auto space-y-3 overflow-y-auto rounded bg-red-950/95 p-4 text-sm leading-6 shadow-lg"
-          onMouseDown={event => event.stopPropagation()}
-        >
-          <p role="alert" className="select-text whitespace-pre-wrap [overflow-wrap:anywhere]">{error}</p>
-          {selectedEnough && <TranslationRetry onRetry={target => void handleTranslate(target)} disabled={isTranslating} />}
-        </div>
-      )}
+      {error
+        ? (
+            <div
+              className="absolute left-1/2 top-1/2 z-30 max-h-[calc(100vh-96px)] w-[calc(100vw-32px)] max-w-xl -translate-x-1/2 -translate-y-1/2 cursor-auto space-y-3 overflow-y-auto rounded bg-red-950/95 p-4 text-sm leading-6 shadow-lg"
+              onMouseDown={event => event.stopPropagation()}
+            >
+              <p role="alert" className="select-text whitespace-pre-wrap [overflow-wrap:anywhere]">{error}</p>
+              {selectedEnough ? <TranslationRetry onRetry={target => void handleTranslate(target)} disabled={isTranslating} /> : null}
+            </div>
+          )
+        : null}
     </div>
   )
 }

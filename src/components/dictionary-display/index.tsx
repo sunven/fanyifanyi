@@ -1,6 +1,6 @@
 import type { DictionaryEntry } from '@/lib/dictionary'
 import { invoke } from '@tauri-apps/api/core'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useDebounce } from 'react-use'
 import { readDictionaryEntry } from '@/lib/dictionary'
 import TabNavigation from './tab-navigation'
@@ -27,23 +27,30 @@ function DictionaryDisplay({ q }: DictionaryDisplayProps) {
   const [entry, setEntry] = useState<DictionaryEntry | null>(null)
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [error, setError] = useState('')
+  const requestVersion = useRef(0)
   const hasQuery = q.trim().length > 0
   const viewStatus = hasQuery ? status : 'idle'
 
   const getDictData = async () => {
-    if (!q.trim()) {
+    const query = q
+    if (!query.trim()) {
       return
     }
+    const version = ++requestVersion.current
     setActiveTab('definitions')
     setEntry(null)
     setStatus('loading')
     setError('')
     try {
-      const next = await invoke('get_dict_data', { q })
-      setEntry(readDictionaryEntry(next, q))
+      const next = await invoke('get_dict_data', { q: query })
+      if (version !== requestVersion.current)
+        return
+      setEntry(readDictionaryEntry(next, query))
       setStatus('ready')
     }
     catch (err) {
+      if (version !== requestVersion.current)
+        return
       setEntry(null)
       setStatus('error')
       const message = typeof err === 'string' ? err.trim() : ''
@@ -52,6 +59,10 @@ function DictionaryDisplay({ q }: DictionaryDisplayProps) {
   }
 
   useDebounce(getDictData, 1000, [q])
+
+  useEffect(() => () => {
+    requestVersion.current += 1
+  }, [q])
 
   if (!q.trim()) {
     return (
